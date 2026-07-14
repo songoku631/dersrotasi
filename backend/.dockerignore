@@ -3,3 +3,8 @@ vendor
 .git
 database/*.sqlite
 *.log
+*.cache
+.phpunit.result.cache
+storage/reports/
+storage/yokatlas/cache/
+storage/yokatlas/state/
