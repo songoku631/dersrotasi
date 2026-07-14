@@ -1,0 +1,5 @@
+vendor
+.env
+.git
+database/*.sqlite
+*.log
