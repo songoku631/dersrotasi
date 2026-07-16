@@ -31,7 +31,7 @@ function ProgramCard({ program, onFavorite, onPreference, busy = false, evaluati
         <div><dt>Puan türü</dt><dd>{enumLabel(program.score_type)}</dd></div>
         <div><dt>Üniversite türü</dt><dd>{enumLabel(program.university_type)}</dd></div>
         <div><dt>Öğretim</dt><dd>{enumLabel(program.education_type)}</dd></div>
-        <div><dt>Dil</dt><dd>{educationLanguageLabel(program.education_language, program.department_name)}</dd></div>
+        <div><dt>Dil</dt><dd>{educationLanguageLabel(program.education_language)}</dd></div>
         <div><dt>Burs</dt><dd>{enumLabel(program.scholarship_type)}</dd></div>
         <div><dt>Taban sıra</dt><dd>{formatRank(program.base_rank)}</dd></div>
         <div><dt>Taban puan</dt><dd>{formatScore(program.base_score)}</dd></div>

@@ -205,6 +205,10 @@ function UniversityPreferencePage() {
 
   const fields = { ...emptyFilters, ...Object.fromEntries(searchParams.entries()) }
   fields.score_type = incomingScoreTypeMap[fields.score_type] || fields.score_type
+  const educationLanguages = [...new Set([
+    'Türkçe',
+    ...(filterOptions.education_languages || []).map((value) => String(value).trim()).filter(Boolean),
+  ])]
   const estimatedRank = Number(searchParams.get('estimated_rank') || 0)
   const activeMessage = activeTab === 'favorites' ? message || favoriteState.message : message
   const activeStatus = activeTab === 'favorites' && !message ? favoriteState.status : status
@@ -229,7 +233,7 @@ function UniversityPreferencePage() {
             {[['university', 'Üniversite adı'], ['department', 'Bölüm adı']].map(([name, label]) => <label key={name}><span>{label}</span><input value={fields[name]} onChange={(event) => updateParams({ [name]: event.target.value, page: 1 })} /></label>)}
             <label><span>Şehir</span><select value={fields.city} onChange={(event) => updateParams({ city: event.target.value, page: 1 })}><option value="">Tümü</option>{(filterOptions.cities || []).map((value) => <option key={value}>{value}</option>)}</select></label>
             {Object.entries(enumOptions).map(([name, options]) => <label key={name}><span>{({ score_type: 'Puan türü', university_type: 'Üniversite türü', education_type: 'Öğretim türü', scholarship_type: 'Burs türü' })[name]}</span><select value={fields[name]} onChange={(event) => updateParams({ [name]: event.target.value, page: 1 })}><option value="">Tümü</option>{options.map((value) => <option key={value} value={value}>{enumLabel(value)}</option>)}</select></label>)}
-            <label><span>Öğretim dili</span><select value={fields.education_language} onChange={(event) => updateParams({ education_language: event.target.value, page: 1 })}><option value="">Tümü</option>{(filterOptions.education_languages || []).map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label><span>Öğretim dili</span><select value={fields.education_language} onChange={(event) => updateParams({ education_language: event.target.value, page: 1 })}><option value="">Tümü</option>{educationLanguages.map((value) => <option key={value}>{value}</option>)}</select></label>
             <label><span>Veri yılı</span><select value={fields.year} onChange={(event) => updateParams({ year: event.target.value, page: 1 })}><option value="">Tümü</option>{(filterOptions.years || []).map((value) => <option key={value}>{value}</option>)}</select></label>
             <label><span>Minimum başarı sırası</span><input type="number" min="1" value={fields.min_rank} onChange={(event) => updateParams({ min_rank: event.target.value, page: 1 })} /></label>
             <label><span>Maksimum başarı sırası</span><input type="number" min="1" value={fields.max_rank} onChange={(event) => updateParams({ max_rank: event.target.value, page: 1 })} /></label>
