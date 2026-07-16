@@ -6,13 +6,16 @@ namespace DersRotasi\Http;
 
 final class JsonResponse
 {
-    public static function applyCors(string $origin): void
+    /**
+     * @param list<string> $allowedOrigins
+     */
+    public static function applyCors(array $allowedOrigins, ?string $requestOrigin): void
     {
-        if ($origin === '') {
+        if ($requestOrigin === null || !in_array($requestOrigin, $allowedOrigins, true)) {
             return;
         }
 
-        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Origin: ' . $requestOrigin);
         header('Access-Control-Allow-Headers: Authorization, Content-Type');
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
         header('Vary: Origin');

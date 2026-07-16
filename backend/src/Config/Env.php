@@ -25,6 +25,29 @@ final class Env
         return $this->get('FRONTEND_ORIGIN');
     }
 
+    /**
+     * @return list<string>
+     */
+    public function corsAllowedOrigins(): array
+    {
+        $origins = [
+            'https://dersrotasi.com',
+            'https://www.dersrotasi.com',
+            'https://derspilot-233017262289.europe-west1.run.app',
+        ];
+
+        if ($this->appEnv() === 'local') {
+            $origins[] = 'http://localhost:5176';
+            $origins[] = 'http://localhost:5173';
+            $configuredOrigin = trim($this->frontendOrigin());
+            if ($configuredOrigin !== '') {
+                $origins[] = $configuredOrigin;
+            }
+        }
+
+        return array_values(array_unique($origins));
+    }
+
     public function firebaseProjectId(): string
     {
         return $this->get('FIREBASE_PROJECT_ID');
@@ -53,17 +76,24 @@ final class Env
 
     public function dbName(): string
     {
-        return $this->get('DB_DATABASE', 'dersrotasi');
+        return $this->get('DB_NAME', $this->get('DB_DATABASE', 'dersrotasi'));
     }
 
     public function dbUsername(): string
     {
-        return $this->get('DB_USERNAME', 'root');
+        return $this->get('DB_USER', $this->get('DB_USERNAME', 'root'));
     }
 
     public function dbPassword(): string
     {
         return $this->get('DB_PASSWORD', '');
+    }
+
+    public function instanceConnectionName(): ?string
+    {
+        $value = trim($this->get('INSTANCE_CONNECTION_NAME'));
+
+        return $value !== '' ? $value : null;
     }
 
     public function yokatlasUserAgent(): string

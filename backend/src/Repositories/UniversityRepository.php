@@ -119,12 +119,15 @@ final class UniversityRepository
         foreach ($columns as $key => $column) {
             $expression = $column;
             if ($key === 'education_languages') {
-                $expression = 'TRIM(education_language)';
+                $expression = "COALESCE(NULLIF(TRIM(education_language), ''), 'Türkçe')";
             }
             $statement = $this->pdo->query(
                 "SELECT DISTINCT {$expression} AS {$column} FROM universities WHERE {$expression} IS NOT NULL AND {$expression} <> '' ORDER BY {$column}"
             );
             $result[$key] = array_column($statement->fetchAll(), $column);
+            if ($key === 'education_languages') {
+                $result[$key] = array_values(array_unique([...$result[$key], 'Türkçe']));
+            }
         }
 
         return $result;
@@ -149,14 +152,14 @@ final class UniversityRepository
     {
         $where = [];
         $params = [];
-        foreach (['search', 'university', 'department', 'city', 'education_language'] as $name) {
+        foreach (['search', 'university', 'department', 'city'] as $name) {
             $value = trim((string) ($filters[$name] ?? ''));
             if ($value === '') {
                 continue;
             }
             $columnMap = [
                 'university' => 'u.university_name', 'department' => 'u.department_name',
-                'city' => 'u.city', 'education_language' => 'TRIM(u.education_language)',
+                'city' => 'u.city',
             ];
             if ($name === 'search') {
                 $where[] = '(u.university_name LIKE :search OR u.department_name LIKE :search OR u.faculty_name LIKE :search OR u.city LIKE :search)';
@@ -164,6 +167,12 @@ final class UniversityRepository
                 $where[] = $columnMap[$name] . " LIKE :{$name}";
             }
             $params[$name] = '%' . $value . '%';
+        }
+
+        $educationLanguage = trim((string) ($filters['education_language'] ?? ''));
+        if ($educationLanguage !== '') {
+            $where[] = "COALESCE(NULLIF(TRIM(u.education_language), ''), 'Türkçe') = :education_language";
+            $params['education_language'] = $educationLanguage;
         }
 
         foreach (self::ENUM_FILTERS as $name => $allowed) {

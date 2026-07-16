@@ -29,7 +29,7 @@ if (file_exists($root . '/.env')) {
 
 $env = new Env($_ENV);
 $request = Request::fromGlobals();
-JsonResponse::applyCors($env->frontendOrigin());
+JsonResponse::applyCors($env->corsAllowedOrigins(), $request->origin());
 
 if ($request->method() === 'OPTIONS') {
     JsonResponse::send(['success' => true]);

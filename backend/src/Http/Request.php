@@ -36,6 +36,13 @@ final class Request
         return $this->path;
     }
 
+    public function origin(): ?string
+    {
+        $origin = trim($this->headers['origin'] ?? '');
+
+        return $origin !== '' ? $origin : null;
+    }
+
     public function bearerToken(): ?string
     {
         $authorization = $this->headers['authorization'] ?? '';
