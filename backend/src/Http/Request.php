@@ -45,13 +45,20 @@ final class Request
 
     public function bearerToken(): ?string
     {
-        $authorization = $this->headers['authorization'] ?? '';
+        $authorization = $this->authorizationHeader() ?? '';
 
         if (!preg_match('/^Bearer\s+(.+)$/i', $authorization, $matches)) {
             return null;
         }
 
         return trim($matches[1]);
+    }
+
+    public function authorizationHeader(): ?string
+    {
+        $authorization = trim($this->headers['authorization'] ?? '');
+
+        return $authorization !== '' ? $authorization : null;
     }
 
     public function json(): array
@@ -88,6 +95,19 @@ final class Request
 
         if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
             $headers['authorization'] = (string) $_SERVER['HTTP_AUTHORIZATION'];
+        }
+
+        if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $headers['authorization'] = (string) $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+
+        if (function_exists('getallheaders')) {
+            $apacheHeaders = getallheaders();
+            if (is_array($apacheHeaders)) {
+                foreach ($apacheHeaders as $name => $value) {
+                    $headers[strtolower((string) $name)] = (string) $value;
+                }
+            }
         }
 
         return $headers;

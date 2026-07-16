@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace DersRotasi\Services;
 
+use Firebase\JWT\BeforeValidException;
+use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use RuntimeException;
+use UnexpectedValueException;
 
 final class FirebaseTokenVerifier
 {
@@ -23,6 +26,7 @@ final class FirebaseTokenVerifier
     public function verify(string $token): array
     {
         if ($this->projectId === '') {
+            error_log('[Firebase Auth] missing_project_id');
             throw new RuntimeException('Firebase proje kimliği backend .env içinde tanımlı değil.', 500);
         }
 
@@ -30,27 +34,35 @@ final class FirebaseTokenVerifier
         $kid = $header['kid'] ?? null;
 
         if (!is_string($kid) || $kid === '') {
-            throw new RuntimeException('Firebase token başlığı geçersiz.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token başlığı geçersiz.');
         }
 
         $certificates = $this->certificates();
         if (!isset($certificates[$kid])) {
-            throw new RuntimeException('Firebase token sertifikası bulunamadı.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token sertifikası bulunamadı.');
         }
 
-        $decoded = (array) JWT::decode($token, new Key($certificates[$kid], 'RS256'));
+        try {
+            $decoded = (array) JWT::decode($token, new Key($certificates[$kid], 'RS256'));
+        } catch (ExpiredException) {
+            $this->reject('expired_token', 'Firebase token süresi dolmuş.');
+        } catch (BeforeValidException) {
+            $this->reject('invalid_bearer_token', 'Firebase token henüz geçerli değil.');
+        } catch (UnexpectedValueException) {
+            $this->reject('invalid_bearer_token', 'Firebase token doğrulanamadı.');
+        }
 
         $expectedIssuer = 'https://securetoken.google.com/' . $this->projectId;
         if (($decoded['iss'] ?? '') !== $expectedIssuer) {
-            throw new RuntimeException('Firebase token issuer değeri geçersiz.', 401);
+            $this->reject('invalid_issuer', 'Firebase token issuer değeri geçersiz.');
         }
 
         if (($decoded['aud'] ?? '') !== $this->projectId) {
-            throw new RuntimeException('Firebase token audience değeri geçersiz.', 401);
+            $this->reject('invalid_audience', 'Firebase token audience değeri geçersiz.');
         }
 
         if (!isset($decoded['sub']) || !is_string($decoded['sub']) || $decoded['sub'] === '') {
-            throw new RuntimeException('Firebase token kullanıcı kimliği içermiyor.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token kullanıcı kimliği içermiyor.');
         }
 
         return [
@@ -144,19 +156,25 @@ final class FirebaseTokenVerifier
     {
         $parts = explode('.', $token);
         if (count($parts) < 2) {
-            throw new RuntimeException('Firebase token formatı geçersiz.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token formatı geçersiz.');
         }
 
         $json = base64_decode(strtr($parts[0], '-_', '+/'), true);
         if ($json === false) {
-            throw new RuntimeException('Firebase token başlığı okunamadı.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token başlığı okunamadı.');
         }
 
         $header = json_decode($json, true);
         if (!is_array($header)) {
-            throw new RuntimeException('Firebase token başlığı çözümlenemedi.', 401);
+            $this->reject('invalid_bearer_token', 'Firebase token başlığı çözümlenemedi.');
         }
 
         return $header;
+    }
+
+    private function reject(string $reason, string $message): never
+    {
+        error_log('[Firebase Auth] ' . $reason);
+        throw new RuntimeException($message, 401);
     }
 }

@@ -1,7 +1,11 @@
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const apiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '')
+
+function apiUrl(path) {
+  return `${apiBaseUrl}/${String(path).replace(/^\/+/, '')}`
+}
 
 function errorMessageForStatus(status, responseMessage) {
-  if (status === 401) return 'Oturumunun süresi doldu. Lütfen yeniden giriş yap.'
+  if (status === 401) return responseMessage || 'Oturum doğrulanamadı. Lütfen yeniden giriş yap.'
   if (status === 403) return 'Bu işlem için yetkin bulunmuyor.'
   if (status === 404) return responseMessage || 'İstenen bilgi bulunamadı.'
   if (status === 422) return responseMessage || 'Gönderilen bilgiler geçerli değil.'
@@ -42,7 +46,7 @@ export async function apiRequest(
 
   let response
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, {
+    response = await fetch(apiUrl(path), {
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
@@ -60,11 +64,12 @@ export async function apiRequest(
   if (response.status === 401 && user && !forceRefresh) {
     return apiRequest(path, { user, auth, method, body, signal, headers }, true)
   }
-  if (response.status === 401 && auth && typeof window !== 'undefined') {
-    window.location.assign('/giris')
-  }
   const data = await parseResponse(response)
-  if (!response.ok) throw new Error(errorMessageForStatus(response.status, data.message))
+  if (!response.ok) {
+    const requestError = new Error(errorMessageForStatus(response.status, data.message))
+    requestError.status = response.status
+    throw requestError
+  }
   return data
 }
 

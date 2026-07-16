@@ -8,29 +8,52 @@ import UserAvatar from '../components/user/UserAvatar'
 import { useAuth } from '../context/useAuth'
 
 function ProfilePage() {
-  const { user } = useAuth()
-  const [sessionStatus, setSessionStatus] = useState('loading')
+  const { authLoading, user } = useAuth()
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [sessionVerified, setSessionVerified] = useState(false)
   const [sessionError, setSessionError] = useState('')
   const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
+    if (authLoading || !user) {
+      return undefined
+    }
+
     const controller = new AbortController()
-    setSessionStatus('loading')
+    let active = true
+
+    setSessionLoading(true)
+    setSessionVerified(false)
     setSessionError('')
 
-    getCurrentUser(user, controller.signal)
-      .then(() => setSessionStatus('ready'))
-      .catch((error) => {
-        if (error.name !== 'AbortError') {
-          setSessionError(error.message)
-          setSessionStatus('error')
+    async function verifySession() {
+      try {
+        await user.getIdToken()
+        await getCurrentUser(user, controller.signal)
+
+        if (active) {
+          setSessionVerified(true)
         }
-      })
+      } catch (error) {
+        if (active && error.name !== 'AbortError') {
+          setSessionError(error.message)
+        }
+      } finally {
+        if (active) {
+          setSessionLoading(false)
+        }
+      }
+    }
 
-    return () => controller.abort()
-  }, [retryCount, user])
+    verifySession()
 
-  if (sessionStatus === 'loading') {
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [authLoading, retryCount, user])
+
+  if (authLoading || sessionLoading) {
     return (
       <section className="auth-loading" aria-live="polite">
         <div>
@@ -41,13 +64,13 @@ function ProfilePage() {
     )
   }
 
-  if (sessionStatus === 'error') {
+  if (sessionError || !sessionVerified) {
     return (
       <section className="section">
         <Container>
           <div className="profile-session-error">
             <div className="form-alert" role="alert">
-              <p>{sessionError}</p>
+              <p>{sessionError || 'Oturum doğrulanamadı. Lütfen tekrar dene.'}</p>
             </div>
             <Button onClick={() => setRetryCount((count) => count + 1)}>
               Tekrar Dene

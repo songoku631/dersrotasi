@@ -1,38 +1,41 @@
 import { ArrowLeft, ShieldCheck } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import GoogleLoginButton from '../components/auth/GoogleLoginButton'
 import Logo from '../components/brand/Logo'
 import Container from '../components/Container'
 import { useAuth } from '../context/useAuth'
 
 function Login() {
-  const { error, isAuthenticated, loading, loginWithGoogle } = useAuth()
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { authLoading, error, loginWithGoogle, user } = useAuth()
+  const [isSigningIn, setIsSigningIn] = useState(false)
   const [localError, setLocalError] = useState('')
-  const location = useLocation()
-  const navigate = useNavigate()
-  const from = location.state?.from?.pathname || '/profil'
 
-  useEffect(() => {
-    setLocalError('')
-  }, [location.key])
+  if (authLoading) {
+    return (
+      <section className="auth-loading" aria-live="polite">
+        <div>
+          <span className="auth-loading__mark"></span>
+          <p>Oturumun doğrulanıyor...</p>
+        </div>
+      </section>
+    )
+  }
 
-  if (!loading && isAuthenticated) {
+  if (user) {
     return <Navigate to="/profil" replace />
   }
 
   async function handleLogin() {
-    setIsSubmitting(true)
+    setIsSigningIn(true)
     setLocalError('')
 
     try {
       await loginWithGoogle()
-      navigate(from, { replace: true })
     } catch (loginError) {
       setLocalError(loginError.message)
     } finally {
-      setIsSubmitting(false)
+      setIsSigningIn(false)
     }
   }
 
@@ -67,7 +70,7 @@ function Login() {
               <p>{localError || error}</p>
             </div>
           ) : null}
-          <GoogleLoginButton isLoading={isSubmitting || loading} onClick={handleLogin} />
+          <GoogleLoginButton isLoading={isSigningIn} onClick={handleLogin} />
           <p className="login-panel__note">
             E-posta ve şifre bilgilerin Google tarafından doğrulanır; Ders Rotası
             yalnızca temel profil bilgilerini alır.

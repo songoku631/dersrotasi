@@ -16,12 +16,18 @@ final class FirebaseAuthMiddleware
 
     public function authenticate(Request $request): array
     {
-        $token = $request->bearerToken();
+        $authorization = $request->authorizationHeader();
 
-        if ($token === null || $token === '') {
+        if ($authorization === null) {
+            error_log('[Firebase Auth] missing_authorization_header');
             throw new RuntimeException('Yetkilendirme tokenı bulunamadı.', 401);
         }
 
-        return $this->verifier->verify($token);
+        if (!preg_match('/^Bearer\s+(.+)$/i', $authorization, $matches) || trim($matches[1]) === '') {
+            error_log('[Firebase Auth] invalid_bearer_token');
+            throw new RuntimeException('Yetkilendirme tokenı geçersiz.', 401);
+        }
+
+        return $this->verifier->verify(trim($matches[1]));
     }
 }

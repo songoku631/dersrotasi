@@ -88,7 +88,15 @@ try {
     }
 
     if ($method === 'GET' && $path === '/api/me') {
-        JsonResponse::send(['success' => true, 'user' => $authenticate()]);
+        $firebaseUser = $authenticate();
+        $repository = new ProfileRepository($db());
+        $profile = $repository->findByUid($firebaseUser['uid'])
+            ?? $repository->save($firebaseUser['uid'], []);
+        JsonResponse::send([
+            'success' => true,
+            'user' => $firebaseUser,
+            'profile' => $profile,
+        ]);
     }
 
     if (($method === 'GET' || $method === 'PUT') && $path === '/api/profile') {

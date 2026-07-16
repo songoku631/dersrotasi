@@ -1,5 +1,5 @@
 import {
-  onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signOut,
 } from 'firebase/auth'
@@ -38,24 +38,25 @@ function getAuthErrorMessage(error) {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [authLoading, setAuthLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!auth) {
-      setLoading(false)
+      setAuthLoading(false)
       return undefined
     }
 
-    const unsubscribe = onAuthStateChanged(
+    const unsubscribe = onIdTokenChanged(
       auth,
       (currentUser) => {
         setUser(currentUser)
-        setLoading(false)
+        setError('')
+        setAuthLoading(false)
       },
       () => {
         setError('Oturum bilgisi alınamadı. Lütfen sayfayı yenileyip tekrar dene.')
-        setLoading(false)
+        setAuthLoading(false)
       },
     )
 
@@ -99,15 +100,16 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      authLoading,
+      authReady: !authLoading,
       error,
       isFirebaseConfigured,
       isAuthenticated: Boolean(user),
-      loading,
       loginWithGoogle,
       logout,
       user,
     }),
-    [error, loading, user],
+    [authLoading, error, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

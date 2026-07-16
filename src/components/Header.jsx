@@ -14,7 +14,7 @@ function Header() {
   const userMenuRef = useRef(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { isAuthenticated, loading, logout, user } = useAuth()
+  const { authLoading, isAuthenticated, logout, user } = useAuth()
 
   useEffect(() => {
     setIsMenuOpen(false)
@@ -78,13 +78,13 @@ function Header() {
         </nav>
 
         <div className="site-header__actions">
-          {!loading && !isAuthenticated ? (
+          {!authLoading && !isAuthenticated ? (
             <Button to="/giris" icon={LogIn} variant="secondary">
               Google ile Giriş
             </Button>
           ) : null}
 
-          {!loading && isAuthenticated ? (
+          {!authLoading && isAuthenticated ? (
             <div className="user-menu" ref={userMenuRef}>
               <button
                 aria-expanded={isUserMenuOpen}
@@ -131,7 +131,7 @@ function Header() {
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
-          {!loading && isAuthenticated ? (
+          {!authLoading && isAuthenticated ? (
             <div className="mobile-user-links">
               <div className="mobile-user-links__profile">
                 <UserAvatar user={user} size={38} />
