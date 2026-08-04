@@ -9,6 +9,7 @@ import PlaceholderPage from './pages/PlaceholderPage'
 import PreferencesPage from './pages/PreferencesPage'
 import FavoritesPage from './pages/FavoritesPage'
 import ProfilePage from './pages/ProfilePage'
+import PremiumPage from './pages/PremiumPage'
 import YksEstimatePage from './pages/YksEstimatePage'
 import UniversityPreferencePage from './pages/UniversityPreferencePage'
 import UniversityDetailPage from './pages/UniversityDetailPage'
@@ -51,6 +52,7 @@ function App() {
         ))}
         <Route element={<ProtectedRoute />}>
           <Route path="/profil" element={<ProfilePage />} />
+          <Route path="/premium" element={<PremiumPage />} />
           <Route path="/favorilerim" element={<FavoritesPage />} />
           <Route path="/tercihlerim" element={<PreferencesPage />} />
           <Route

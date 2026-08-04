@@ -32,6 +32,7 @@ function Footer() {
             <Link to="/pomodoro">Pomodoro</Link>
             <Link to="/calisma-plani">Çalışma Planı</Link>
             <Link to="/profil">Profil</Link>
+            <Link to="/premium">Premium</Link>
             <Link to="/giris">Giriş</Link>
           </nav>
         </div>

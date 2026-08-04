@@ -27,7 +27,15 @@ final class EducationLanguageNormalizer
 
         $provided = trim((string) $providedLanguage);
         if ($provided !== '') {
-            return self::languageIn($provided) ?? $provided;
+            $recognized = self::languageIn($provided);
+            if ($recognized !== null) {
+                return $recognized;
+            }
+            if ($provided === 'Arap' || preg_match('/^.{1,2}$/u', $provided) === 1) {
+                return 'Türkçe';
+            }
+
+            return $provided;
         }
 
         return 'Türkçe';

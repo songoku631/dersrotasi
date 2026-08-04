@@ -6,9 +6,11 @@ import PageHeader from '../components/PageHeader'
 import ProfileForm from '../components/profile/ProfileForm'
 import UserAvatar from '../components/user/UserAvatar'
 import { useAuth } from '../context/useAuth'
+import { useUserPlan } from '../hooks/useUserPlan'
 
 function ProfilePage() {
   const { authLoading, user } = useAuth()
+  const { error: planError, loading: planLoading, plan, refresh: refreshPlan } = useUserPlan(user)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [sessionVerified, setSessionVerified] = useState(false)
   const [sessionError, setSessionError] = useState('')
@@ -95,6 +97,15 @@ function ProfilePage() {
               <h2>{user.displayName || 'Ders Rotası kullanıcısı'}</h2>
               <p>{user.email}</p>
               <span>Google hesabı ile doğrulandı</span>
+              <div className="profile-plan" aria-live="polite">
+                <small>Mevcut plan</small>
+                <strong>{planLoading ? 'Yükleniyor…' : plan?.is_premium ? 'Premium' : 'Ücretsiz'}</strong>
+                {planError ? (
+                  <button onClick={refreshPlan} type="button">Planı yeniden yükle</button>
+                ) : (
+                  <Button to="/premium" variant="secondary">Planları Gör</Button>
+                )}
+              </div>
             </aside>
             <div className="profile-panel">
               <div className="section-heading">

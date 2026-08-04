@@ -79,6 +79,10 @@ export function getCurrentUser(user, signal) {
   return apiRequest('/api/me', { user, auth: true, signal })
 }
 
+export function getMyPlan(user, signal) {
+  return apiRequest('/api/me/plan', { user, auth: true, signal })
+}
+
 export function getProfile(user, signal) {
   return apiRequest('/api/profile', { user, auth: true, signal })
 }

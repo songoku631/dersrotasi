@@ -7,6 +7,7 @@ use DersRotasi\AI\AiChatValidator;
 use DersRotasi\AI\AiIntent;
 use DersRotasi\AI\LazyAiGroundingProvider;
 use DersRotasi\AI\OpenAiResponsesClient;
+use DersRotasi\AI\PdoAiUsageStore;
 use DersRotasi\AI\PdoRateLimitStore;
 use DersRotasi\AI\RateLimiter;
 use DersRotasi\Config\Env;
@@ -25,6 +26,9 @@ use DersRotasi\Services\PreferenceEvaluationService;
 use DersRotasi\Services\YksBacktestConfidenceService;
 use DersRotasi\Services\YksRankEstimator;
 use DersRotasi\Services\YksScoreCalculator;
+use DersRotasi\Subscriptions\PlanCatalog;
+use DersRotasi\Subscriptions\SubscriptionRepository;
+use DersRotasi\Subscriptions\UserPlanService;
 use Dotenv\Dotenv;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -106,6 +110,17 @@ try {
         ]);
     }
 
+    if ($method === 'GET' && $path === '/api/me/plan') {
+        $firebaseUid = $authenticate()['uid'];
+        $usageStore = new PdoAiUsageStore($db());
+        $plan = (new UserPlanService(
+            new SubscriptionRepository($db()),
+            new PlanCatalog($env),
+            $usageStore
+        ))->forUid($firebaseUid);
+        JsonResponse::send(['success' => true, 'data' => $plan]);
+    }
+
     if (($method === 'GET' || $method === 'PUT') && $path === '/api/profile') {
         $firebaseUser = $authenticate();
         $repository = new ProfileRepository($db());
@@ -126,37 +141,85 @@ try {
     if ($method === 'POST' && $path === '/api/ai/chat') {
         $firebaseUid = $authenticate()['uid'];
         $body = $request->json();
-        $rateIdentifier = 'uid:' . $firebaseUid;
-        (new RateLimiter(new PdoRateLimitStore($db())))->hit($rateIdentifier);
-
-        if (!$env->aiChatEnabled()) {
-            throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
-        }
-        if ($env->openAiApiKey() === '') {
-            throw new RuntimeException(
-                'Dersrotası AI henüz yapılandırılmadı: OPENAI_API_KEY eksik.',
-                503
-            );
+        $requestId = $body['request_id'] ?? null;
+        if (!is_string($requestId) || !preg_match('/^[A-Za-z0-9._:-]{8,128}$/', $requestId)) {
+            throw new RuntimeException('Geçerli bir request_id gönderilmelidir.', 422);
         }
 
-        $intent = new AiIntent();
-        $service = new AiChatService(
-            new AiChatValidator(),
-            $intent,
-            new LazyAiGroundingProvider($db, $intent),
-            new OpenAiResponsesClient(
-                $env->openAiApiKey(),
-                $env->openAiModel(),
-                $env->openAiTimeout(),
-                $env->sslCaBundle()
-            ),
-            $env->aiChatEnabled()
+        $userKeyHash = hash('sha256', $firebaseUid);
+        $requestIdHash = hash('sha256', $requestId);
+        $usageStore = new PdoAiUsageStore($db());
+        $planService = new UserPlanService(
+            new SubscriptionRepository($db()),
+            new PlanCatalog($env),
+            $usageStore
         );
-        JsonResponse::send($service->chat(
-            $body,
-            $firebaseUid,
-            hash('sha256', $rateIdentifier)
-        ));
+        $plan = $planService->forUid($firebaseUid);
+        $validated = (new AiChatValidator())->validate($body, $plan['limits']['max_message_chars']);
+        $inputCharacters = strlen($validated['message']);
+        foreach ($validated['history'] as $historyItem) {
+            $inputCharacters += strlen($historyItem['content']);
+        }
+        $reservedTokens = max(1, (int) ceil($inputCharacters / 4)) + $env->aiMaxOutputTokens();
+        $reservation = $usageStore->reserve(
+            $userKeyHash,
+            $requestIdHash,
+            $plan['plan'],
+            $plan['limits'],
+            $reservedTokens,
+            $env->aiGlobalDailyTokenBudget()
+        );
+        if ($reservation['state'] === 'completed') {
+            JsonResponse::send($reservation['response']);
+        }
+
+        $rateIdentifier = 'uid:' . $firebaseUid;
+        try {
+            (new RateLimiter(new PdoRateLimitStore($db())))->hit($rateIdentifier);
+
+            if (!$env->aiChatEnabled()) {
+                throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
+            }
+            if ($env->openAiApiKey() === '') {
+                throw new RuntimeException(
+                    'Dersrotası AI henüz yapılandırılmadı: OPENAI_API_KEY eksik.',
+                    503
+                );
+            }
+
+            $intent = new AiIntent();
+            $service = new AiChatService(
+                new AiChatValidator(),
+                $intent,
+                new LazyAiGroundingProvider($db, $intent),
+                new OpenAiResponsesClient(
+                    $env->openAiApiKey(),
+                    $env->openAiModel(),
+                    $env->openAiTimeout(),
+                    $env->sslCaBundle(),
+                    null,
+                    $env->aiMaxOutputTokens()
+                ),
+                $env->aiChatEnabled()
+            );
+            $response = $service->chat(
+                $body,
+                $firebaseUid,
+                hash('sha256', $rateIdentifier)
+            );
+            $actualTokens = (int) ($response['meta']['usage']['total_tokens'] ?? 0);
+            $response['meta']['plan'] = $plan['plan'];
+            $response = $usageStore->complete(
+                $userKeyHash,
+                $requestIdHash,
+                $actualTokens,
+                $response
+            );
+            JsonResponse::send($response);
+        } catch (Throwable $exception) {
+            $usageStore->fail($userKeyHash, $requestIdHash);
+            throw $exception;
+        }
     }
 
     if ($path === '/api/yks/estimates') {
@@ -178,6 +241,17 @@ try {
 
     if ($method === 'GET' && $path === '/api/universities/filters') {
         JsonResponse::send(['success' => true, 'data' => (new UniversityRepository($db()))->filters()]);
+    }
+
+    if ($method === 'GET' && $path === '/api/universities/options') {
+        $limit = $positiveId($_GET['limit'] ?? 20, 'limit');
+        JsonResponse::send(['success' => true, 'data' => ['items' => (new UniversityRepository($db()))->options(
+            (string) ($_GET['type'] ?? ''),
+            (string) ($_GET['q'] ?? ''),
+            $_GET['university'] ?? [],
+            (string) ($_GET['value'] ?? ''),
+            $limit
+        )]]);
     }
 
     if ($method === 'GET' && preg_match('#^/api/universities/(\d+)$#', $path, $matches)) {

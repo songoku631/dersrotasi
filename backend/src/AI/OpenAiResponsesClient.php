@@ -19,7 +19,8 @@ final class OpenAiResponsesClient implements OpenAiClient
         private readonly string $model,
         private readonly int $timeoutSeconds,
         private readonly ?string $sslCaBundle = null,
-        private readonly ?ClientInterface $httpClient = null
+        private readonly ?ClientInterface $httpClient = null,
+        private readonly int $maxOutputTokens = 500
     ) {
     }
 
@@ -50,7 +51,7 @@ final class OpenAiResponsesClient implements OpenAiClient
                     'input' => $input,
                     'reasoning' => ['effort' => 'low'],
                     'text' => ['verbosity' => 'medium'],
-                    'max_output_tokens' => 1400,
+                    'max_output_tokens' => $this->maxOutputTokens,
                     'store' => false,
                     'safety_identifier' => $safetyIdentifier,
                 ],

@@ -9,6 +9,16 @@ use RuntimeException;
 
 final class UniversityRepository
 {
+    private const TURKISH_COLLATION = 'utf8mb4_tr_0900_as_cs';
+    private const AUTOCOMPLETE_COLLATION = 'utf8mb4_tr_0900_ai_ci';
+    private const EDUCATION_LANGUAGE_SQL = "CASE
+        WHEN education_language IS NULL
+          OR TRIM(education_language) = ''
+          OR CHAR_LENGTH(TRIM(education_language)) < 3
+          OR TRIM(education_language) = 'Arap'
+        THEN 'Türkçe'
+        ELSE TRIM(education_language)
+    END";
     private const SORTS = [
         'rank_asc' => 'u.base_rank IS NULL, u.base_rank ASC',
         'rank_desc' => 'u.base_rank IS NULL, u.base_rank DESC',
@@ -66,7 +76,8 @@ final class UniversityRepository
         $count->execute();
         $total = (int) $count->fetchColumn();
 
-        $sql = 'SELECT u.*, ' . $favoriteSelect . ' FROM universities u'
+        $sql = 'SELECT u.*, ' . self::educationLanguageSql('u') . ' AS education_language, '
+            . $favoriteSelect . ' FROM universities u'
             . $favoriteJoin . $whereSql
             . ' ORDER BY ' . self::SORTS[$sort] . ', u.id ASC LIMIT :limit OFFSET :offset';
         $statement = $this->pdo->prepare($sql);
@@ -99,7 +110,8 @@ final class UniversityRepository
         }
 
         $statement = $this->pdo->prepare(
-            'SELECT u.*, ' . $favoriteSelect . ' FROM universities u' . $join . ' WHERE u.id = :id LIMIT 1'
+            'SELECT u.*, ' . self::educationLanguageSql('u') . ' AS education_language, '
+            . $favoriteSelect . ' FROM universities u' . $join . ' WHERE u.id = :id LIMIT 1'
         );
         $statement->execute($params);
         $row = $statement->fetch();
@@ -119,25 +131,99 @@ final class UniversityRepository
         foreach ($columns as $key => $column) {
             $expression = $column;
             if ($key === 'education_languages') {
-                $expression = "COALESCE(NULLIF(TRIM(education_language), ''), 'Türkçe')";
+                $expression = self::educationLanguageSql();
             }
             $statement = $this->pdo->query(
                 "SELECT DISTINCT {$expression} AS {$column} FROM universities WHERE {$expression} IS NOT NULL AND {$expression} <> '' ORDER BY {$column}"
             );
             $result[$key] = array_column($statement->fetchAll(), $column);
             if ($key === 'education_languages') {
-                $result[$key] = array_values(array_unique([...$result[$key], 'Türkçe']));
+                $result[$key] = array_values(array_unique($result[$key]));
             }
         }
 
         return $result;
     }
 
+    /**
+     * @return list<string>
+     */
+    public function options(
+        string $type,
+        string $query = '',
+        array|string $university = [],
+        string $exactValue = '',
+        int $limit = 20
+    ): array {
+        $columns = [
+            'university' => 'u.university_name',
+            'department' => 'u.department_name',
+        ];
+        if (!isset($columns[$type])) {
+            throw new RuntimeException('Seçenek türü geçersiz.', 422);
+        }
+        if ($limit < 1 || $limit > 20) {
+            throw new RuntimeException('En fazla 20 seçenek istenebilir.', 422);
+        }
+
+        $query = trim($query);
+        $universities = $this->stringList($university, 'university');
+        $exactValue = trim($exactValue);
+        foreach ([$query, $exactValue] as $value) {
+            if (strlen($value) > 300) {
+                throw new RuntimeException('Seçenek araması çok uzun.', 422);
+            }
+        }
+
+        $column = $columns[$type];
+        $where = ["TRIM({$column}) <> ''"];
+        $params = [];
+        if ($type === 'department' && $universities !== []) {
+            $where[] = $this->inCondition(
+                'u.university_name', 'option_university', $universities, $params
+            );
+        }
+        if ($exactValue !== '') {
+            $where[] = "{$column} = :exact_value";
+            $params['exact_value'] = $exactValue;
+        } elseif ($query !== '') {
+            $params['query'] = $query;
+            $strictWhere = [...$where, self::strictAutocompleteSql($column)
+                . ' LIKE CONCAT(\'%\', ' . self::strictAutocompleteSql(':query') . ", '%')"];
+            $strictMatches = $this->fetchOptions($column, $strictWhere, $params, $limit);
+            if ($strictMatches !== []) {
+                return $strictMatches;
+            }
+            $where[] = self::autocompleteSql($column)
+                . ' LIKE CONCAT(\'%\', ' . self::autocompleteSql(':query') . ", '%')";
+        }
+
+        return $this->fetchOptions($column, $where, $params, $limit);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function fetchOptions(string $column, array $where, array $params, int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT DISTINCT {$column} AS value FROM universities u WHERE "
+            . implode(' AND ', $where)
+            . " ORDER BY {$column} COLLATE " . self::AUTOCOMPLETE_COLLATION . ' ASC LIMIT :limit'
+        );
+        $this->bind($statement, $params);
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_values(array_map('strval', $statement->fetchAll(PDO::FETCH_COLUMN)));
+    }
+
     public function suggestionCandidates(array $filters, int $limit): array
     {
         [$where, $params] = $this->buildFilters($filters);
         $where[] = 'u.base_rank IS NOT NULL';
-        $sql = 'SELECT u.* FROM universities u WHERE ' . implode(' AND ', $where)
+        $sql = 'SELECT u.*, ' . self::educationLanguageSql('u') . ' AS education_language '
+            . 'FROM universities u WHERE ' . implode(' AND ', $where)
             . ' ORDER BY ABS(u.base_rank - :user_rank) ASC, u.base_rank ASC LIMIT :limit';
         $statement = $this->pdo->prepare($sql);
         $this->bind($statement, $params);
@@ -152,26 +238,42 @@ final class UniversityRepository
     {
         $where = [];
         $params = [];
-        foreach (['search', 'university', 'department', 'city'] as $name) {
-            $value = trim((string) ($filters[$name] ?? ''));
+        foreach (['university', 'department'] as $name) {
+            $rawValue = $filters[$name] ?? '';
+            $columnMap = [
+                'university' => 'u.university_name', 'department' => 'u.department_name',
+            ];
+            if (is_array($rawValue)) {
+                $values = $this->stringList($rawValue, $name);
+                if ($values !== []) {
+                    $where[] = $this->inCondition($columnMap[$name], $name, $values, $params);
+                }
+                continue;
+            }
+
+            $value = trim((string) $rawValue);
             if ($value === '') {
                 continue;
             }
-            $columnMap = [
-                'university' => 'u.university_name', 'department' => 'u.department_name',
-                'city' => 'u.city',
-            ];
-            if ($name === 'search') {
-                $where[] = '(u.university_name LIKE :search OR u.department_name LIKE :search OR u.faculty_name LIKE :search OR u.city LIKE :search)';
-            } else {
-                $where[] = $columnMap[$name] . " LIKE :{$name}";
-            }
-            $params[$name] = '%' . $value . '%';
+            $where[] = sprintf(
+                "LOWER(%s COLLATE %s) LIKE LOWER(:%s COLLATE %s) ESCAPE '='",
+                $columnMap[$name],
+                self::TURKISH_COLLATION,
+                $name,
+                self::TURKISH_COLLATION
+            );
+            $params[$name] = '%' . $this->escapeLike($value) . '%';
+        }
+
+        $city = trim((string) ($filters['city'] ?? ''));
+        if ($city !== '') {
+            $where[] = 'u.city = :city';
+            $params['city'] = $city;
         }
 
         $educationLanguage = trim((string) ($filters['education_language'] ?? ''));
         if ($educationLanguage !== '') {
-            $where[] = "COALESCE(NULLIF(TRIM(u.education_language), ''), 'Türkçe') = :education_language";
+            $where[] = self::educationLanguageSql('u') . ' = :education_language';
             $params['education_language'] = $educationLanguage;
         }
 
@@ -226,5 +328,80 @@ final class UniversityRepository
         foreach ($params as $name => $value) {
             $statement->bindValue(':' . $name, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
         }
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['=', '%', '_'], ['==', '=%', '=_'], $value);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stringList(mixed $value, string $name): array
+    {
+        $items = is_array($value) ? $value : [$value];
+        if (count($items) > 100) {
+            throw new RuntimeException("{$name} filtresinde en fazla 100 değer kullanılabilir.", 422);
+        }
+
+        $values = [];
+        foreach ($items as $item) {
+            if (!is_string($item) && !is_numeric($item)) {
+                throw new RuntimeException("{$name} filtresi geçersiz.", 422);
+            }
+            $item = trim((string) $item);
+            if ($item === '') {
+                continue;
+            }
+            if (strlen($item) > 300) {
+                throw new RuntimeException("{$name} filtresi çok uzun.", 422);
+            }
+            $values[$item] = true;
+        }
+
+        return array_keys($values);
+    }
+
+    private function inCondition(
+        string $column,
+        string $prefix,
+        array $values,
+        array &$params
+    ): string {
+        $placeholders = [];
+        foreach ($values as $index => $value) {
+            $name = $prefix . '_' . $index;
+            $placeholders[] = ':' . $name;
+            $params[$name] = $value;
+        }
+
+        return $column . ' IN (' . implode(', ', $placeholders) . ')';
+    }
+
+    private static function educationLanguageSql(string $alias = ''): string
+    {
+        $column = $alias === '' ? 'education_language' : $alias . '.education_language';
+
+        return str_replace('education_language', $column, self::EDUCATION_LANGUAGE_SQL);
+    }
+
+    private static function autocompleteSql(string $value): string
+    {
+        $normalized = "LOWER({$value} COLLATE " . self::AUTOCOMPLETE_COLLATION . ')';
+        foreach ([
+            'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+            'â' => 'a', 'î' => 'i', 'û' => 'u',
+        ] as $from => $to) {
+            $normalized = "REPLACE({$normalized}, '{$from}', '{$to}')";
+        }
+
+        return "REGEXP_REPLACE({$normalized}, '[^[:alnum:]]+', '')";
+    }
+
+    private static function strictAutocompleteSql(string $value): string
+    {
+        return "REGEXP_REPLACE(LOWER({$value} COLLATE " . self::TURKISH_COLLATION
+            . "), '[^[:alnum:]]+', '')";
     }
 }

@@ -124,7 +124,50 @@ final class Env
 
     public function aiChatEnabled(): bool
     {
-        return filter_var($this->get('AI_CHAT_ENABLED', 'true'), FILTER_VALIDATE_BOOL);
+        return filter_var(
+            $this->has('AI_ENABLED') ? $this->get('AI_ENABLED') : $this->get('AI_CHAT_ENABLED', 'true'),
+            FILTER_VALIDATE_BOOL
+        );
+    }
+
+    public function aiFreeDailyRequests(): int
+    {
+        return $this->positiveInt('AI_FREE_DAILY_REQUESTS', 3, 1, 1000);
+    }
+
+    public function aiFreeDailyTokenBudget(): int
+    {
+        return $this->positiveInt('AI_FREE_DAILY_TOKEN_BUDGET', 6000, 500, 10000000);
+    }
+
+    public function aiFreeMaxMessageChars(): int
+    {
+        return $this->positiveInt('AI_FREE_MAX_MESSAGE_CHARS', 1200, 100, 10000);
+    }
+
+    public function aiPremiumDailyRequests(): int
+    {
+        return $this->positiveInt('AI_PREMIUM_DAILY_REQUESTS', 50, 1, 10000);
+    }
+
+    public function aiPremiumDailyTokenBudget(): int
+    {
+        return $this->positiveInt('AI_PREMIUM_DAILY_TOKEN_BUDGET', 60000, 500, 100000000);
+    }
+
+    public function aiPremiumMaxMessageChars(): int
+    {
+        return $this->positiveInt('AI_PREMIUM_MAX_MESSAGE_CHARS', 2500, 100, 20000);
+    }
+
+    public function aiGlobalDailyTokenBudget(): int
+    {
+        return $this->positiveInt('AI_GLOBAL_DAILY_TOKEN_BUDGET', 200000, 1000, 1000000000);
+    }
+
+    public function aiMaxOutputTokens(): int
+    {
+        return $this->positiveInt('AI_MAX_OUTPUT_TOKENS', 500, 16, 10000);
     }
 
     private function get(string $key, string $default = ''): string
@@ -136,5 +179,21 @@ final class Env
         }
 
         return (string) $value;
+    }
+
+    private function has(string $key): bool
+    {
+        return array_key_exists($key, $this->values) || getenv($key) !== false;
+    }
+
+    private function positiveInt(string $key, int $default, int $minimum, int $maximum): int
+    {
+        $value = filter_var(
+            $this->get($key, (string) $default),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => $minimum, 'max_range' => $maximum]]
+        );
+
+        return $value === false ? $default : (int) $value;
     }
 }

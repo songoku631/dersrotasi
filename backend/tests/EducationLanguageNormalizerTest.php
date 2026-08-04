@@ -20,5 +20,7 @@ assertLanguage('Almanca', 'Almanca Öğretmenliği');
 assertLanguage('Fransızca', 'Fransız Dili ve Edebiyatı');
 assertLanguage('Türkçe', 'Hukuk', 'Türkçe');
 assertLanguage('İngilizce', 'Hukuk', 'İngilizce');
+assertLanguage('Türkçe', 'Çocuk Gelişimi', 'ç');
+assertLanguage('Türkçe', 'Şarap Üretim Teknolojisi', 'Arap');
 
 echo "EducationLanguageNormalizerTest: OK\n";

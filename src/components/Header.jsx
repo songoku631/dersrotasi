@@ -44,6 +44,7 @@ function Header() {
         <NavLink to="/favorilerim">Favorilerim</NavLink>
         <NavLink to="/tercihlerim">Tercihlerim</NavLink>
         <NavLink to="/calisma-plani">Çalışma Planım</NavLink>
+        <NavLink to="/premium">Premium</NavLink>
         <button type="button" onClick={handleLogout}>
           Çıkış Yap
         </button>
@@ -76,6 +77,7 @@ function Header() {
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
+          {isAuthenticated ? <NavLink to="/premium">Premium</NavLink> : null}
         </nav>
 
         <div className="site-header__actions">

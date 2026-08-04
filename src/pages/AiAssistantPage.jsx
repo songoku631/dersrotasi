@@ -1,5 +1,6 @@
 import { Bot, RotateCcw, Send, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { sendAiMessage } from '../api/aiApi'
 import { buildAiHistory } from '../api/aiHistory'
 import GoogleLoginButton from '../components/auth/GoogleLoginButton'
@@ -7,6 +8,7 @@ import AiMarkdown from '../components/ai/AiMarkdown'
 import Container from '../components/Container'
 import PageHeader from '../components/PageHeader'
 import { useAuth } from '../context/useAuth'
+import { useUserPlan } from '../hooks/useUserPlan'
 
 const suggestions = [
   'Sıralamama uygun bölümler',
@@ -15,12 +17,13 @@ const suggestions = [
   'Tercih listesi oluştur',
 ]
 
-function AiConversation({ user }) {
+function AiConversation({ plan, refreshPlan, user }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [failedMessage, setFailedMessage] = useState('')
+  const [failedRequestId, setFailedRequestId] = useState('')
   const textareaRef = useRef(null)
   const messagesRef = useRef(null)
   const requestRef = useRef(null)
@@ -36,7 +39,7 @@ function AiConversation({ user }) {
 
   useEffect(() => () => requestRef.current?.abort(), [])
 
-  async function submit(message, appendUser = true) {
+  async function submit(message, appendUser = true, existingRequestId = '') {
     const cleanMessage = message.trim()
     if (!cleanMessage || status === 'loading') return
 
@@ -50,24 +53,29 @@ function AiConversation({ user }) {
     setDraft('')
     setError('')
     setFailedMessage('')
+    setFailedRequestId('')
     setStatus('loading')
 
     const controller = new AbortController()
     requestRef.current = controller
+    const requestId = existingRequestId || crypto.randomUUID()
 
     try {
       const history = buildAiHistory(previousMessages)
-      const response = await sendAiMessage(user, cleanMessage, history, controller.signal)
+      const response = await sendAiMessage(user, cleanMessage, history, requestId, controller.signal)
       setMessages((current) => [
         ...current,
         { id: crypto.randomUUID(), role: 'assistant', content: response.answer },
       ])
       setStatus('idle')
+      refreshPlan()
     } catch (requestError) {
       if (requestError.name === 'AbortError') return
       setError(requestError.message)
       setFailedMessage(cleanMessage)
+      setFailedRequestId(requestError.status ? '' : requestId)
       setStatus('error')
+      refreshPlan()
     } finally {
       requestRef.current = null
     }
@@ -92,6 +100,10 @@ function AiConversation({ user }) {
         <div>
           <strong>Dersrotası AI</strong>
           <small>Sıralaman, hedeflerin ve tercihlerin için burada.</small>
+        </div>
+        <div className="ai-assistant__quota" aria-live="polite">
+          <strong>{plan?.is_premium ? 'Premium' : 'Ücretsiz'}</strong>
+          <small>Bugün {plan?.usage?.requests_remaining ?? 0} mesaj kaldı</small>
         </div>
       </header>
 
@@ -139,9 +151,12 @@ function AiConversation({ user }) {
         {error ? (
           <div className="ai-assistant__error" role="alert">
             <p>{error}</p>
-            <button onClick={() => submit(failedMessage, false)} type="button">
+            <button onClick={() => submit(failedMessage, false, failedRequestId)} type="button">
               <RotateCcw aria-hidden="true" /> Tekrar dene
             </button>
+            {!plan?.is_premium && error.toLocaleLowerCase('tr-TR').includes('günlük') ? (
+              <Link to="/premium">Premium planı incele</Link>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -150,7 +165,7 @@ function AiConversation({ user }) {
         <textarea
           aria-label="Dersrotası AI'ya mesaj"
           disabled={status === 'loading'}
-          maxLength={2000}
+          maxLength={plan?.limits?.max_message_chars ?? 1200}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Örn. 80 bin sayısal sıralamayla İstanbul'da hangi mühendislikleri düşünebilirim?"
@@ -163,6 +178,9 @@ function AiConversation({ user }) {
           <span>Gönder</span>
         </button>
       </form>
+      <p className="ai-assistant__character-limit">
+        Mesaj sınırı: {plan?.limits?.max_message_chars?.toLocaleString('tr-TR') ?? '1.200'} karakter
+      </p>
       <p className="ai-assistant__notice">AI yanılabilir; nihai tercihini güncel ÖSYM kılavuzundan doğrula.</p>
     </section>
   )
@@ -207,6 +225,7 @@ function AiAccessCard() {
 
 function AiAssistantPage() {
   const { authLoading, user } = useAuth()
+  const { error: planError, loading: planLoading, plan, refresh } = useUserPlan(user)
 
   return (
     <>
@@ -224,7 +243,18 @@ function AiAssistantPage() {
             </div>
           ) : null}
           {!authLoading && !user ? <AiAccessCard /> : null}
-          {!authLoading && user ? <AiConversation key={user.uid} user={user} /> : null}
+          {!authLoading && user && planLoading ? (
+            <div className="ai-assistant__loading" aria-live="polite"><p>Plan bilgin yükleniyor...</p></div>
+          ) : null}
+          {!authLoading && user && planError ? (
+            <div className="ai-assistant__access">
+              <div className="form-alert" role="alert"><p>{planError}</p></div>
+              <button className="button button--secondary" onClick={refresh} type="button">Tekrar Dene</button>
+            </div>
+          ) : null}
+          {!authLoading && user && !planLoading && !planError && plan ? (
+            <AiConversation key={user.uid} plan={plan} refreshPlan={refresh} user={user} />
+          ) : null}
         </Container>
       </section>
     </>

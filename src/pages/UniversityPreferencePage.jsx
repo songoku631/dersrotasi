@@ -1,17 +1,30 @@
 import { Filter, Search } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { addFavorite, removeFavorite } from '../api/favoritesApi'
 import { getPreferenceSuggestions } from '../api/preferenceSuggestionsApi'
 import { addPreference } from '../api/preferencesApi'
-import { getUniversities, getUniversityFilters } from '../api/universitiesApi'
+import {
+  getDepartmentNameOptions,
+  getUniversities,
+  getUniversityFilters,
+  getUniversityNameOptions,
+} from '../api/universitiesApi'
 import Button from '../components/Button'
 import Container from '../components/Container'
 import PageHeader from '../components/PageHeader'
+import SearchableCombobox from '../components/SearchableCombobox'
 import ProgramCard from '../components/universities/ProgramCard'
 import { useAuth } from '../context/useAuth'
 import { useFavorites } from '../hooks/useFavorites'
 import { enumLabel } from '../utils/universityFormat'
+import {
+  changeUniversitySearchParams,
+  filterOptionValues,
+  multiFilterValues,
+  normalizeScoreType,
+  universityApiParams,
+} from '../utils/universityFilters'
 
 const tabs = [
   { value: 'all', label: 'Tüm Programlar' },
@@ -19,21 +32,10 @@ const tabs = [
   { value: 'suggestions', label: 'Sıralamama Göre Öneriler' },
 ]
 
-const enumOptions = {
-  score_type: ['say', 'ea', 'soz', 'dil', 'tyt'],
-  university_type: ['devlet', 'vakif', 'kktc', 'yabanci'],
-  education_type: ['orgun', 'ikinci_ogretim', 'uzaktan', 'acikogretim', 'diger'],
-  scholarship_type: ['ucretsiz', 'burslu', 'yuzde_50', 'yuzde_25', 'ucretli', 'diger'],
-}
-
 const emptyFilters = {
-  search: '', university: '', department: '', city: '', score_type: '',
+  university: '', department: '', city: '', score_type: '',
   university_type: '', education_type: '', education_language: '',
   scholarship_type: '', year: '', min_rank: '', max_rank: '', sort: 'rank_asc', page: '1',
-}
-
-const incomingScoreTypeMap = {
-  SAY: 'say', EA: 'ea', 'SÖZ': 'soz', SOZ: 'soz', 'DİL': 'dil', DIL: 'dil', TYT: 'tyt',
 }
 
 function UniversityPreferencePage() {
@@ -42,35 +44,82 @@ function UniversityPreferencePage() {
   const { user, isAuthenticated } = useAuth()
   const activeTab = searchParams.get('tab') || 'all'
   const favoriteState = useFavorites(user, activeTab === 'favorites' && isAuthenticated)
-  const [searchDraft, setSearchDraft] = useState(searchParams.get('search') || '')
+  const requestSequence = useRef(0)
+  const selectionValidationSequence = useRef(0)
   const [items, setItems] = useState([])
   const [filterOptions, setFilterOptions] = useState({})
   const [pagination, setPagination] = useState({ page: 1, total_pages: 0, total: 0 })
   const [suggestions, setSuggestions] = useState(null)
   const [status, setStatus] = useState('loading')
   const [message, setMessage] = useState('')
+  const [filterMessage, setFilterMessage] = useState('')
   const [authPrompt, setAuthPrompt] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const fields = { ...emptyFilters, ...Object.fromEntries(searchParams.entries()) }
+  fields.score_type = normalizeScoreType(fields.score_type)
+  const serializedSearchParams = searchParams.toString()
+  const selectedUniversities = useMemo(
+    () => multiFilterValues(new URLSearchParams(serializedSearchParams), 'university'),
+    [serializedSearchParams],
+  )
+  const selectedDepartments = useMemo(
+    () => multiFilterValues(new URLSearchParams(serializedSearchParams), 'department'),
+    [serializedSearchParams],
+  )
 
   const updateParams = useCallback((changes) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      Object.entries(changes).forEach(([key, value]) => {
-        if (value === '' || value === null) next.delete(key)
-        else next.set(key, String(value))
-      })
-      return next
-    })
+    setSearchParams((current) => changeUniversitySearchParams(current, changes))
   }, [setSearchParams])
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchDraft !== (searchParams.get('search') || '')) {
-        updateParams({ search: searchDraft, page: 1 })
+  const loadUniversityNames = useCallback(async (query, signal) => {
+    const response = await getUniversityNameOptions(query, signal)
+    return response.data?.items || []
+  }, [])
+
+  const loadDepartmentNames = useCallback(async (query, signal) => {
+    const response = await getDepartmentNameOptions(query, selectedUniversities, signal)
+    return response.data?.items || []
+  }, [selectedUniversities])
+
+  const selectUniversities = useCallback(async (universities) => {
+    const sequence = ++selectionValidationSequence.current
+    setFilterMessage('')
+    updateParams({ university: universities, page: 1 })
+    if (universities.length === 0) {
+      return
+    }
+
+    try {
+      const universityChecks = await Promise.all(universities.map(async (university) => {
+        const response = await getUniversityNameOptions('', undefined, university)
+        return (response.data?.items || []).includes(university) ? university : null
+      }))
+      const validUniversities = universityChecks.filter(Boolean)
+      const departmentChecks = await Promise.all(selectedDepartments.map(async (department) => {
+        const response = await getDepartmentNameOptions('', validUniversities, undefined, department)
+        return (response.data?.items || []).includes(department) ? department : null
+      }))
+      if (sequence !== selectionValidationSequence.current) return
+
+      const validDepartments = departmentChecks.filter(Boolean)
+      updateParams({ university: validUniversities, department: validDepartments, page: 1 })
+      const removedUniversityCount = universities.length - validUniversities.length
+      const removedDepartmentCount = selectedDepartments.length - validDepartments.length
+      if (removedDepartmentCount > 0) {
+        setFilterMessage(`${removedDepartmentCount} bölüm yeni üniversite seçimlerinde bulunmadığı için kaldırıldı.`)
+      } else if (removedUniversityCount > 0) {
+        setFilterMessage(`${removedUniversityCount} geçersiz üniversite seçimi kaldırıldı.`)
       }
-    }, 450)
-    return () => clearTimeout(timer)
-  }, [searchDraft, searchParams, updateParams])
+    } catch {
+      if (sequence !== selectionValidationSequence.current) return
+      setFilterMessage('Seçili bölümlerin yeni üniversitelerde bulunup bulunmadığı doğrulanamadı.')
+    }
+  }, [selectedDepartments, updateParams])
+
+  const selectDepartments = useCallback((departments) => {
+    setFilterMessage('')
+    updateParams({ department: departments, page: 1 })
+  }, [updateParams])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -81,6 +130,7 @@ function UniversityPreferencePage() {
   }, [])
 
   const load = useCallback((signal) => {
+    const sequence = ++requestSequence.current
     if (activeTab === 'favorites') return Promise.resolve()
 
     setStatus('loading')
@@ -92,15 +142,13 @@ function UniversityPreferencePage() {
       return Promise.resolve()
     }
 
-    const params = Object.fromEntries(searchParams.entries())
-    delete params.tab
-    params.score_type = incomingScoreTypeMap[params.score_type] || params.score_type
-    delete params.estimated_rank
+    const params = universityApiParams(searchParams)
     const request = activeTab === 'suggestions'
       ? getPreferenceSuggestions(user, params, signal)
       : getUniversities(params, user, signal)
 
     return request.then((response) => {
+      if (sequence !== requestSequence.current) return
       if (activeTab === 'suggestions') {
         setSuggestions(response.data)
         setItems([])
@@ -115,7 +163,7 @@ function UniversityPreferencePage() {
       }
       setStatus('ready')
     }).catch((error) => {
-      if (error.name !== 'AbortError') {
+      if (sequence === requestSequence.current && error?.name !== 'AbortError') {
         setMessage(error.message)
         setStatus('error')
       }
@@ -203,12 +251,12 @@ function UniversityPreferencePage() {
     return <div className="program-list">{programs.map((program) => <ProgramCard key={program.id} program={program} busy={busyId === program.id || favoriteState.busyId === program.id} onFavorite={handleFavorite} onPreference={handlePreference} />)}</div>
   }
 
-  const fields = { ...emptyFilters, ...Object.fromEntries(searchParams.entries()) }
-  fields.score_type = incomingScoreTypeMap[fields.score_type] || fields.score_type
-  const educationLanguages = [...new Set([
-    'Türkçe',
-    ...(filterOptions.education_languages || []).map((value) => String(value).trim()).filter(Boolean),
-  ])]
+  const enumFilters = [
+    ['score_type', 'Puan türü', 'score_types'],
+    ['university_type', 'Üniversite türü', 'university_types'],
+    ['education_type', 'Öğretim türü', 'education_types'],
+    ['scholarship_type', 'Burs türü', 'scholarship_types'],
+  ]
   const estimatedRank = Number(searchParams.get('estimated_rank') || 0)
   const activeMessage = activeTab === 'favorites' ? message || favoriteState.message : message
   const activeStatus = activeTab === 'favorites' && !message ? favoriteState.status : status
@@ -223,22 +271,23 @@ function UniversityPreferencePage() {
         </div>
 
         {authPrompt ? <div className="form-alert" role="alert"><p>{authPrompt}</p><Link className="button button--primary" to="/giris" state={{ from: location }}>Giriş Yap</Link></div> : null}
+        {filterMessage ? <div className="information-banner" role="status">{filterMessage}</div> : null}
         {activeMessage ? <div className={activeStatus === 'error' ? 'form-alert' : 'success-alert'} role="status"><p>{activeMessage}</p></div> : null}
 
         {activeTab === 'all' && estimatedRank > 0 ? <div className="information-banner">Tahmini sıralamana göre seçilen aralık gösteriliyor. Bu aralık geçmiş yerleştirme sonuçlarına dayalı yaklaşık bir yardımcı bilgidir.</div> : null}
         {activeTab === 'all' ? <div className="university-layout">
           <form className="filter-panel" aria-label="Üniversite tercih filtreleri" onSubmit={(event) => event.preventDefault()}>
             <div className="filter-panel__header"><Filter size={22} /><h2>Filtreler</h2></div>
-            <label><span>Genel arama</span><input value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} placeholder="Üniversite, bölüm veya şehir" /></label>
-            {[['university', 'Üniversite adı'], ['department', 'Bölüm adı']].map(([name, label]) => <label key={name}><span>{label}</span><input value={fields[name]} onChange={(event) => updateParams({ [name]: event.target.value, page: 1 })} /></label>)}
+            <SearchableCombobox id="university-filter" label="Üniversite adı" values={selectedUniversities} onChange={selectUniversities} loadOptions={loadUniversityNames} placeholder="Üniversite ara" />
+            <SearchableCombobox id="department-filter" label="Bölüm adı" values={selectedDepartments} onChange={selectDepartments} loadOptions={loadDepartmentNames} placeholder="Bölüm ara" />
             <label><span>Şehir</span><select value={fields.city} onChange={(event) => updateParams({ city: event.target.value, page: 1 })}><option value="">Tümü</option>{(filterOptions.cities || []).map((value) => <option key={value}>{value}</option>)}</select></label>
-            {Object.entries(enumOptions).map(([name, options]) => <label key={name}><span>{({ score_type: 'Puan türü', university_type: 'Üniversite türü', education_type: 'Öğretim türü', scholarship_type: 'Burs türü' })[name]}</span><select value={fields[name]} onChange={(event) => updateParams({ [name]: event.target.value, page: 1 })}><option value="">Tümü</option>{options.map((value) => <option key={value} value={value}>{enumLabel(value)}</option>)}</select></label>)}
-            <label><span>Öğretim dili</span><select value={fields.education_language} onChange={(event) => updateParams({ education_language: event.target.value, page: 1 })}><option value="">Tümü</option>{educationLanguages.map((value) => <option key={value}>{value}</option>)}</select></label>
+            {enumFilters.map(([name, label, optionKey]) => <label key={name}><span>{label}</span><select value={fields[name]} onChange={(event) => updateParams({ [name]: event.target.value, page: 1 })}><option value="">Tümü</option>{filterOptionValues(filterOptions[optionKey] || [], fields[name]).map((value) => <option key={value} value={value}>{enumLabel(value)}</option>)}</select></label>)}
+            <label><span>Öğretim dili</span><select value={fields.education_language} onChange={(event) => updateParams({ education_language: event.target.value, page: 1 })}><option value="">Tümü</option>{filterOptionValues(filterOptions.education_languages || [], fields.education_language).map((value) => <option key={value}>{value}</option>)}</select></label>
             <label><span>Veri yılı</span><select value={fields.year} onChange={(event) => updateParams({ year: event.target.value, page: 1 })}><option value="">Tümü</option>{(filterOptions.years || []).map((value) => <option key={value}>{value}</option>)}</select></label>
             <label><span>Minimum başarı sırası</span><input type="number" min="1" value={fields.min_rank} onChange={(event) => updateParams({ min_rank: event.target.value, page: 1 })} /></label>
             <label><span>Maksimum başarı sırası</span><input type="number" min="1" value={fields.max_rank} onChange={(event) => updateParams({ max_rank: event.target.value, page: 1 })} /></label>
             <label><span>Sıralama</span><select value={fields.sort} onChange={(event) => updateParams({ sort: event.target.value, page: 1 })}><option value="rank_asc">Düşükten yükseğe</option><option value="rank_desc">Yüksekten düşüğe</option><option value="score_desc">Taban puanı: yüksekten düşüğe</option><option value="score_asc">Taban puanı: düşükten yükseğe</option><option value="university_asc">Üniversite: A-Z</option><option value="university_desc">Üniversite: Z-A</option><option value="department_asc">Bölüm: A-Z</option><option value="department_desc">Bölüm: Z-A</option></select></label>
-            <Button variant="secondary" onClick={() => { setSearchDraft(''); setSearchParams({}) }}>Filtreleri Temizle</Button>
+            <Button variant="secondary" onClick={() => { setFilterMessage(''); setSearchParams({}) }}>Filtreleri Temizle</Button>
           </form>
           <div>
             {status === 'loading' ? <div className="loading-panel">Programlar yükleniyor...</div> : null}

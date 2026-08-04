@@ -14,6 +14,7 @@ use DersRotasi\AI\RateLimiter;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -241,9 +242,14 @@ aiThrows(
 $validator = new AiChatValidator();
 aiThrows(fn () => $validator->validate(['message' => '  ']), 422, 'Boş mesaj');
 aiThrows(
-    fn () => $validator->validate(['message' => str_repeat('a', 2001)]),
+    fn () => $validator->validate(['message' => str_repeat('a', 2501)]),
     422,
     'Çok uzun mesaj'
+);
+aiThrows(
+    fn () => $validator->validate(['message' => str_repeat('a', 1201)], 1200),
+    422,
+    'Ücretsiz plan mesaj sınırı'
 );
 aiThrows(fn () => $validator->validate(['message' => []]), 422, 'Dizi mesaj');
 aiThrows(
@@ -405,6 +411,20 @@ $parsed = responseClient(json_encode([
     'usage' => ['input_tokens' => 10, 'output_tokens' => 5, 'total_tokens' => 15],
 ], JSON_UNESCAPED_UNICODE))->respond('instructions', [], 'test');
 aiCheck($parsed['answer'] === "Birinci\nİkinci", 'Çoklu output_text birleştirilemedi.');
+
+$historyContainer = [];
+$outputLimitHandler = HandlerStack::create(new MockHandler([
+    new Response(200, ['Content-Type' => 'application/json'], json_encode([
+        'output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'Yanıt']]]],
+    ], JSON_UNESCAPED_UNICODE)),
+]));
+$outputLimitHandler->push(Middleware::history($historyContainer));
+(new OpenAiResponsesClient(
+    'test-key', 'gpt-5.6-luna', 5, null,
+    new Client(['handler' => $outputLimitHandler]), 500
+))->respond('instructions', [['role' => 'user', 'content' => 'test']], 'test');
+$sentPayload = json_decode((string) $historyContainer[0]['request']->getBody(), true);
+aiCheck($sentPayload['max_output_tokens'] === 500, 'OpenAI output token sınırı uygulanmadı.');
 
 aiThrows(
     fn () => responseClient('{"output":"unexpected","usage":"unexpected"}')

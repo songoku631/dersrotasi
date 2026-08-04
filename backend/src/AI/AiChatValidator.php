@@ -8,13 +8,14 @@ use RuntimeException;
 
 final class AiChatValidator
 {
-    public const MAX_MESSAGE_LENGTH = 2000;
+    public const MAX_MESSAGE_LENGTH = 2500;
     public const MAX_HISTORY_ITEMS = 10;
     public const MAX_HISTORY_CONTENT_LENGTH = 2000;
     public const MAX_HISTORY_TOTAL_LENGTH = 8000;
 
-    public function validate(array $body): array
+    public function validate(array $body, ?int $maxMessageLength = null): array
     {
+        $messageLimit = $maxMessageLength ?? self::MAX_MESSAGE_LENGTH;
         $messageValue = $body['message'] ?? null;
         if (!is_string($messageValue)) {
             throw new RuntimeException('Mesaj metin olmalıdır.', 422);
@@ -23,9 +24,9 @@ final class AiChatValidator
         if ($message === '') {
             throw new RuntimeException('Mesaj boş olamaz.', 422);
         }
-        if ($this->length($message) > self::MAX_MESSAGE_LENGTH) {
+        if ($this->length($message) > $messageLimit) {
             throw new RuntimeException(
-                'Mesaj en fazla ' . self::MAX_MESSAGE_LENGTH . ' karakter olabilir.',
+                'Mesaj en fazla ' . $messageLimit . ' karakter olabilir.',
                 422
             );
         }
