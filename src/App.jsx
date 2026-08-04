@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import MainLayout from './layouts/MainLayout'
+import AiAssistantPage from './pages/AiAssistantPage'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
@@ -29,6 +30,7 @@ function App() {
     <Routes>
       <Route element={<MainLayout />}>
         <Route index element={<Home />} />
+        <Route path="/ai-asistan" element={<AiAssistantPage />} />
         <Route path="/yks-siralama-tahmini" element={<YksEstimatePage />} />
         <Route path="/tyt-net-hesaplama" element={<Navigate replace to="/yks-siralama-tahmini" />} />
         <Route path="/ayt-net-hesaplama" element={<Navigate replace to="/yks-siralama-tahmini" />} />

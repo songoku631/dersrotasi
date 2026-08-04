@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+use DersRotasi\AI\AiChatService;
+use DersRotasi\AI\AiChatValidator;
+use DersRotasi\AI\AiIntent;
+use DersRotasi\AI\LazyAiGroundingProvider;
+use DersRotasi\AI\OpenAiResponsesClient;
+use DersRotasi\AI\PdoRateLimitStore;
+use DersRotasi\AI\RateLimiter;
 use DersRotasi\Config\Env;
 use DersRotasi\Database\Connection;
 use DersRotasi\Http\JsonResponse;
@@ -114,6 +121,42 @@ try {
 
     if ($method === 'POST' && $path === '/api/yks/estimate') {
         JsonResponse::send(['success' => true, 'data' => $calculateYks($request->json())]);
+    }
+
+    if ($method === 'POST' && $path === '/api/ai/chat') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $rateIdentifier = 'uid:' . $firebaseUid;
+        (new RateLimiter(new PdoRateLimitStore($db())))->hit($rateIdentifier);
+
+        if (!$env->aiChatEnabled()) {
+            throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
+        }
+        if ($env->openAiApiKey() === '') {
+            throw new RuntimeException(
+                'Dersrotası AI henüz yapılandırılmadı: OPENAI_API_KEY eksik.',
+                503
+            );
+        }
+
+        $intent = new AiIntent();
+        $service = new AiChatService(
+            new AiChatValidator(),
+            $intent,
+            new LazyAiGroundingProvider($db, $intent),
+            new OpenAiResponsesClient(
+                $env->openAiApiKey(),
+                $env->openAiModel(),
+                $env->openAiTimeout(),
+                $env->sslCaBundle()
+            ),
+            $env->aiChatEnabled()
+        );
+        JsonResponse::send($service->chat(
+            $body,
+            $firebaseUid,
+            hash('sha256', $rateIdentifier)
+        ));
     }
 
     if ($path === '/api/yks/estimates') {
@@ -301,12 +344,15 @@ try {
     JsonResponse::send(['success' => false, 'message' => 'İstenen kaynak bulunamadı.'], 404);
 } catch (Throwable $exception) {
     $status = (int) $exception->getCode();
-    if ($status < 400 || $status > 499) {
+    if ($status < 400 || $status > 599) {
         $status = 500;
     }
     error_log(sprintf('[API] %s: %s', $exception::class, $exception->getMessage()));
+    $safeServerErrors = [502, 503, 504];
     JsonResponse::send([
         'success' => false,
-        'message' => $status === 500 ? 'İşlem şu anda tamamlanamadı.' : $exception->getMessage(),
+        'message' => $status === 500 || ($status >= 500 && !in_array($status, $safeServerErrors, true))
+            ? 'İşlem şu anda tamamlanamadı.'
+            : $exception->getMessage(),
     ], $status);
 }

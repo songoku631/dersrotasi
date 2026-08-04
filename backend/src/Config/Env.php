@@ -101,6 +101,32 @@ final class Env
         return $this->get('YOKATLAS_USER_AGENT', 'DersRotasiDataTool/1.0 (+http://localhost)');
     }
 
+    public function openAiApiKey(): string
+    {
+        return trim($this->get('OPENAI_API_KEY'));
+    }
+
+    public function openAiModel(): string
+    {
+        return trim($this->get('OPENAI_MODEL', 'gpt-5.6-luna')) ?: 'gpt-5.6-luna';
+    }
+
+    public function openAiTimeout(): int
+    {
+        $value = filter_var(
+            $this->get('OPENAI_TIMEOUT', '25'),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 5, 'max_range' => 60]]
+        );
+
+        return $value === false ? 25 : (int) $value;
+    }
+
+    public function aiChatEnabled(): bool
+    {
+        return filter_var($this->get('AI_CHAT_ENABLED', 'true'), FILTER_VALIDATE_BOOL);
+    }
+
     private function get(string $key, string $default = ''): string
     {
         $value = $this->values[$key] ?? getenv($key);

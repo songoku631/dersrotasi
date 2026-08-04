@@ -29,3 +29,6 @@ dist-ssr
 # Backend
 backend/vendor/
 backend/.env
+backend/credentials/
+*service-account*.json
+*firebase-adminsdk*.json

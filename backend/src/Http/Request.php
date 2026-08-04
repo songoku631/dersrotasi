@@ -61,6 +61,20 @@ final class Request
         return $authorization !== '' ? $authorization : null;
     }
 
+    public function clientIp(): string
+    {
+        $forwarded = trim($this->headers['x-forwarded-for'] ?? '');
+        if ($forwarded !== '') {
+            $candidate = trim(explode(',', $forwarded)[0]);
+            if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                return $candidate;
+            }
+        }
+
+        $remote = trim((string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+        return filter_var($remote, FILTER_VALIDATE_IP) ? $remote : 'unknown';
+    }
+
     public function json(): array
     {
         if ($this->body === '') {

@@ -8,6 +8,7 @@ Bu klasör Ders Rotası PHP API'sidir. Yapılandırma yalnızca bu klasördeki `
 - Composer
 - MySQL 8+
 - Firebase Authentication projesi
+- Backend testleri için PDO SQLite (`backend/Dockerfile` içinde kurulur)
 
 ## Yerel kurulum
 
@@ -76,12 +77,74 @@ php scripts/check_ssl.php
 
 `FRONTEND_ORIGIN` boş bırakılırsa API CORS header'ı göndermez; production'da açık CORS (`*`) kullanılmaz.
 
+### AI rate limit migration'ı
+
+AI endpoint'i rate limit durumunu bütün Cloud Run instance'ları arasında paylaşmak için Cloud SQL'deki `ai_rate_limits` tablosunu kullanır. `identifier_hash` alanında yalnızca SHA-256 özeti tutulur; Firebase UID veya IP gibi ham anahtarlar veritabanına yazılmaz. Yeni backend revision'ını yayınlamadan önce production veritabanı yedeğini alıp migration'ı çalıştırın:
+
+```bash
+cd backend
+APP_ENV=production php database/migrate.php
+```
+
+Bu komut idempotent `database/migrations/007_create_ai_rate_limits.sql` dosyasını da uygular. Tablo eksikse veya Cloud SQL erişilemezse AI endpoint'i limitsiz çalışmak yerine güvenli biçimde HTTP 503 döndürür.
+
+### OPENAI_API_KEY Secret Manager bağlantısı
+
+OpenAI API anahtarını `.env`, Cloud Build substitution, Docker build argument veya repodaki herhangi bir dosyaya yazmayın. OpenAI de production anahtarlarının kaynak kod yerine environment variable veya bir secret yönetim servisiyle verilmesini önerir. Aşağıdaki komutlar Google Cloud Shell/Bash içindir; `PROJECT_ID`, servis hesabı ve secret version yer tutucularını kendi production değerlerinizle değiştirin.
+
+Önce Secret Manager API'yi etkinleştirip boş secret kaydını oluşturun:
+
+```bash
+gcloud config set project PROJECT_ID
+gcloud services enable secretmanager.googleapis.com
+gcloud secrets create dersrotasi-openai-api-key --replication-policy=automatic
+```
+
+Anahtarı terminal çıktısına veya shell history'ye yazmadan yeni secret version olarak ekleyin:
+
+```bash
+read -rsp 'OpenAI API key: ' OPENAI_API_KEY_VALUE
+printf '%s' "$OPENAI_API_KEY_VALUE" | \
+  gcloud secrets versions add dersrotasi-openai-api-key --data-file=-
+unset OPENAI_API_KEY_VALUE
+```
+
+Backend servisinin kullandığı service account e-postasını öğrenin:
+
+```bash
+gcloud run services describe dersrotasi-backend \
+  --region=europe-west1 \
+  --format='value(spec.template.spec.serviceAccountName)'
+```
+
+Çıktıdaki hesabı `BACKEND_SERVICE_ACCOUNT_EMAIL` yerine koyup yalnızca bu secret için erişim verin:
+
+```bash
+gcloud secrets add-iam-policy-binding dersrotasi-openai-api-key \
+  --member='serviceAccount:BACKEND_SERVICE_ACCOUNT_EMAIL' \
+  --role='roles/secretmanager.secretAccessor'
+```
+
+Son olarak oluşturulan sayısal secret version'ı `SECRET_VERSION` yerine yazarak Cloud Run environment variable'ına bağlayın. Production'da `latest` yerine sabit version kullanın:
+
+```bash
+gcloud run services update dersrotasi-backend \
+  --region=europe-west1 \
+  --update-secrets=OPENAI_API_KEY=dersrotasi-openai-api-key:SECRET_VERSION \
+  --update-env-vars=AI_CHAT_ENABLED=true,OPENAI_MODEL=gpt-5.6-luna,OPENAI_TIMEOUT=25
+```
+
+Anahtar döndürüldüğünde Secret Manager'a yeni version ekleyin ve Cloud Run servisini yeni sayısal version'a güncelleyin. Eski version'ı ancak yeni revision doğrulandıktan sonra devre dışı bırakın.
+
+Kaynaklar: [OpenAI production API key önerileri](https://developers.openai.com/api/docs/guides/production-best-practices#api-keys), [Cloud Run secret yapılandırması](https://cloud.google.com/run/docs/configuring/services/secrets), [Secret Manager'a version ekleme](https://cloud.google.com/secret-manager/docs/add-secret-version).
+
 ## Endpointler
 
 - `GET /health` — servis durumunu döndürür.
 - `GET /api/me` — Firebase tokenını doğrular ve kullanıcıyı döndürür.
 - `GET /api/profile` — giriş yapan kullanıcının profilini döndürür.
 - `PUT /api/profile` — giriş yapan kullanıcının profilini kaydeder veya günceller.
+- `POST /api/ai/chat` — Firebase ile doğrulanmış kullanıcıya veritabanı destekli AI yanıtı döndürür.
 
 ### Üniversite tercih verisi
 

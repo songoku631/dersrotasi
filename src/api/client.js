@@ -8,7 +8,9 @@ function errorMessageForStatus(status, responseMessage) {
   if (status === 401) return responseMessage || 'Oturum doğrulanamadı. Lütfen yeniden giriş yap.'
   if (status === 403) return 'Bu işlem için yetkin bulunmuyor.'
   if (status === 404) return responseMessage || 'İstenen bilgi bulunamadı.'
+  if (status === 429) return responseMessage || 'Çok fazla istek gönderdin. Lütfen biraz bekleyip tekrar dene.'
   if (status === 422) return responseMessage || 'Gönderilen bilgiler geçerli değil.'
+  if ([502, 503, 504].includes(status)) return responseMessage || 'Dersrotası AI şu anda yanıt veremiyor.'
   if (status >= 500) return 'İşlem şu anda tamamlanamadı. Lütfen daha sonra tekrar dene.'
   return responseMessage || 'İstek tamamlanamadı. Lütfen tekrar dene.'
 }

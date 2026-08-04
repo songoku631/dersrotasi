@@ -72,6 +72,7 @@ function Header() {
             </div>
           </div>
           <NavLink to="/universite-tercih">Üniversite Tercih</NavLink>
+          <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
@@ -128,6 +129,7 @@ function Header() {
           <strong className="mobile-menu__section-title">Araçlar</strong>
           {toolMenuItems.map((tool) => <NavLink key={tool.path} to={tool.path}>{tool.title}</NavLink>)}
           <NavLink to="/universite-tercih">Üniversite Tercih</NavLink>
+          <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
           <NavLink to="/profil">Profilim</NavLink>

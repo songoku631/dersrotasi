@@ -3,8 +3,8 @@ FROM php:8.3-apache
 WORKDIR /var/www/html
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends unzip libzip-dev \
-  && docker-php-ext-install pdo pdo_mysql zip \
+  && apt-get install -y --no-install-recommends unzip libzip-dev libsqlite3-dev \
+  && docker-php-ext-install pdo pdo_mysql pdo_sqlite zip \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
