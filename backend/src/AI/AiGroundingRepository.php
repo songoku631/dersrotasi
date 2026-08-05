@@ -89,7 +89,8 @@ final class AiGroundingRepository implements AiGroundingProvider
 
         $order = 'u.base_rank IS NULL, u.base_rank ASC';
         if ($rank !== null) {
-            $order = 'u.base_rank IS NULL, ABS(u.base_rank - :target_rank) ASC, u.base_rank ASC';
+            $order = 'u.base_rank IS NULL, '
+                . 'ABS(CAST(u.base_rank AS SIGNED) - :target_rank) ASC, u.base_rank ASC';
             $params['target_rank'] = $rank;
         }
 

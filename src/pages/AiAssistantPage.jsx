@@ -243,16 +243,16 @@ function AiAssistantPage() {
             </div>
           ) : null}
           {!authLoading && !user ? <AiAccessCard /> : null}
-          {!authLoading && user && planLoading ? (
+          {!authLoading && user && planLoading && !plan ? (
             <div className="ai-assistant__loading" aria-live="polite"><p>Plan bilgin yükleniyor...</p></div>
           ) : null}
-          {!authLoading && user && planError ? (
+          {!authLoading && user && planError && !plan ? (
             <div className="ai-assistant__access">
               <div className="form-alert" role="alert"><p>{planError}</p></div>
               <button className="button button--secondary" onClick={refresh} type="button">Tekrar Dene</button>
             </div>
           ) : null}
-          {!authLoading && user && !planLoading && !planError && plan ? (
+          {!authLoading && user && plan ? (
             <AiConversation key={user.uid} plan={plan} refreshPlan={refresh} user={user} />
           ) : null}
         </Container>
