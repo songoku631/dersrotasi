@@ -15,7 +15,7 @@ import { tools } from '../data/tools'
 const steps = [
   {
     title: 'Aracını seç',
-    text: 'Net hesaplama, puan tahmini, pomodoro veya çalışma planı ekranına hızlıca geç.',
+    text: 'YKS puan karşılaştırma, net hesaplama, pomodoro veya çalışma planı ekranına hızlıca geç.',
   },
   {
     title: 'Bilgilerini gir',
@@ -69,13 +69,13 @@ function Home() {
             <p className="eyebrow">Ders Rotası ile YKS kontrol paneli</p>
             <h1>YKS yolculuğunu planla, netlerini hesapla, hedefini takip et</h1>
             <p>
-              Ders Rotası; TYT net hesaplama, puan ve sıralama tahmini, pomodoro
+              Ders Rotası; TYT net hesaplama, resmî YKS puan-sıralama karşılaştırma, pomodoro
               ve çalışma planı araçlarını tek bir modern eğitim platformunda
               toplamayı hedefler.
             </p>
             <div className="hero-section__actions">
               <Button to="/yks-siralama-tahmini" icon={ArrowRight}>
-                YKS Sıralama Tahmini
+                YKS Puan - Sıralama
               </Button>
               <Button to="/calisma-plani" icon={ClipboardList} variant="secondary">
                 Çalışma Planı Oluştur

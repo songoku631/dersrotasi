@@ -16,11 +16,17 @@ export function educationLanguageLabel(value) {
 }
 
 export function formatRank(value) {
-  return value == null ? 'Başarı sırası verisi bulunmuyor' : Number(value).toLocaleString('tr-TR')
+  const number = Number(value)
+  return value == null || value === '' || !Number.isFinite(number) || number <= 0
+    ? 'Başarı sırası verisi bulunmuyor'
+    : number.toLocaleString('tr-TR')
 }
 
 export function formatScore(value) {
-  return value == null ? 'Taban puanı oluşmadı' : Number(value).toLocaleString('tr-TR', { maximumFractionDigits: 5 })
+  const number = Number(value)
+  return value == null || value === '' || !Number.isFinite(number) || number <= 0
+    ? '—'
+    : number.toLocaleString('tr-TR', { maximumFractionDigits: 5 })
 }
 
 export function formatNullable(value, suffix = '') {

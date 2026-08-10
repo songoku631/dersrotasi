@@ -20,10 +20,18 @@ final class UniversityRepository
         ELSE TRIM(education_language)
     END";
     private const SORTS = [
-        'rank_asc' => 'u.base_rank IS NULL, u.base_rank ASC',
-        'rank_desc' => 'u.base_rank IS NULL, u.base_rank DESC',
+        'rank_asc' => '(u.base_rank IS NULL OR u.base_rank <= 0), u.base_rank ASC',
+        'rank_desc' => '(u.base_rank IS NULL OR u.base_rank <= 0), u.base_rank DESC',
         'score_desc' => 'u.base_score IS NULL, u.base_score DESC',
         'score_asc' => 'u.base_score IS NULL, u.base_score ASC',
+        'rank_2025_asc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 ASC',
+        'rank_2025_desc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 DESC',
+        'rank_2024_asc' => '(u24.base_rank IS NULL OR u24.base_rank <= 0), u24.base_rank ASC',
+        'rank_2024_desc' => '(u24.base_rank IS NULL OR u24.base_rank <= 0), u24.base_rank DESC',
+        'rank_2023_asc' => '(u23.base_rank IS NULL OR u23.base_rank <= 0), u23.base_rank ASC',
+        'rank_2023_desc' => '(u23.base_rank IS NULL OR u23.base_rank <= 0), u23.base_rank DESC',
+        'score_2025_desc' => 'score_2025 IS NULL, score_2025 DESC',
+        'score_2025_asc' => 'score_2025 IS NULL, score_2025 ASC',
         'university_asc' => 'u.university_name ASC',
         'university_desc' => 'u.university_name DESC',
         'department_asc' => 'u.department_name ASC',
@@ -43,41 +51,62 @@ final class UniversityRepository
     public function paginate(array $filters, ?string $firebaseUid = null): array
     {
         $page = $this->positiveInt($filters['page'] ?? 1, 'page');
-        $limit = $this->positiveInt($filters['limit'] ?? 20, 'limit');
+        $limit = $this->positiveInt($filters['limit'] ?? 50, 'limit');
         if ($limit > 100) {
             throw new RuntimeException('Sayfa başına en fazla 100 kayıt istenebilir.', 422);
         }
 
-        $sort = trim((string) ($filters['sort'] ?? 'rank_asc'));
+        $sort = trim((string) ($filters['sort'] ?? 'rank_2025_asc'));
         if (!isset(self::SORTS[$sort])) {
             throw new RuntimeException('Sıralama seçeneği geçersiz.', 422);
         }
 
-        [$where, $params] = $this->buildFilters($filters);
+        $ranking2025 = 'CASE WHEN u25.id IS NOT NULL THEN u25.base_rank ELSE u26.base_rank END';
+        $score2025 = 'CASE WHEN u25.id IS NOT NULL THEN u25.base_score ELSE u26.base_score END';
+        $rankFilterColumn = $this->rankFilterColumnForSort($sort, $ranking2025);
+        [$where, $params] = $this->buildFilters($filters, false, $rankFilterColumn);
+        array_unshift($where, $this->latestProgramRowSql());
         $favoritesOnly = filter_var($filters['favorites_only'] ?? false, FILTER_VALIDATE_BOOL);
         if ($favoritesOnly && $firebaseUid === null) {
             throw new RuntimeException('Favorileri görüntülemek için giriş yapmalısınız.', 401);
         }
 
+        $historyJoins = ' LEFT JOIN universities u25 ON u25.program_code = u.program_code AND u25.year = 2025'
+            . ' LEFT JOIN universities u26 ON u26.program_code = u.program_code AND u26.year = 2026 AND u25.id IS NULL'
+            . ' LEFT JOIN universities u24 ON u24.program_code = u.program_code AND u24.year = 2024'
+            . ' LEFT JOIN universities u23 ON u23.program_code = u.program_code AND u23.year = 2023';
         $favoriteJoin = '';
-        $favoriteSelect = '0 AS is_favorite';
+        $favoriteSelect = '0 AS is_favorite, NULL AS favorite_id';
         if ($firebaseUid !== null) {
-            $favoriteJoin = ' LEFT JOIN favorites f ON f.university_id = u.id AND f.firebase_uid = :firebase_uid';
-            $favoriteSelect = 'CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS is_favorite';
+            $favoriteJoin = ' LEFT JOIN ('
+                . 'SELECT fu.program_code, MIN(f.university_id) AS favorite_id FROM favorites f '
+                . 'INNER JOIN universities fu ON fu.id = f.university_id '
+                . 'WHERE f.firebase_uid = :firebase_uid GROUP BY fu.program_code'
+                . ') f ON f.program_code = u.program_code';
+            $favoriteSelect = 'CASE WHEN f.favorite_id IS NULL THEN 0 ELSE 1 END AS is_favorite, '
+                . 'f.favorite_id AS favorite_id';
             $params['firebase_uid'] = $firebaseUid;
             if ($favoritesOnly) {
-                $where[] = 'f.id IS NOT NULL';
+                $where[] = 'f.favorite_id IS NOT NULL';
             }
         }
 
         $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
-        $count = $this->pdo->prepare('SELECT COUNT(*) FROM universities u' . $favoriteJoin . $whereSql);
+        $count = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM universities u' . $historyJoins . $favoriteJoin . $whereSql
+        );
         $this->bind($count, $params);
         $count->execute();
         $total = (int) $count->fetchColumn();
 
-        $sql = 'SELECT u.*, ' . self::educationLanguageSql('u') . ' AS education_language, '
-            . $favoriteSelect . ' FROM universities u'
+        $sql = 'SELECT u.*, u.year AS source_year, '
+            . self::educationLanguageSql('u') . ' AS education_language, '
+            . $favoriteSelect . ', '
+            . $ranking2025 . ' AS ranking_2025, u24.base_rank AS ranking_2024, u23.base_rank AS ranking_2023, '
+            . $score2025 . ' AS score_2025, u24.base_score AS score_2024, u23.base_score AS score_2023, '
+            . 'CASE WHEN u25.id IS NOT NULL THEN u25.quota ELSE u26.quota END AS quota_2025, '
+            . 'u24.quota AS quota_2024, u23.quota AS quota_2023 '
+            . 'FROM universities u' . $historyJoins
             . $favoriteJoin . $whereSql
             . ' ORDER BY ' . self::SORTS[$sort] . ', u.id ASC LIMIT :limit OFFSET :offset';
         $statement = $this->pdo->prepare($sql);
@@ -87,7 +116,10 @@ final class UniversityRepository
         $statement->execute();
 
         return [
-            'items' => $statement->fetchAll(),
+            'items' => array_map(
+                [new UniversityHistoryPresenter(), 'present'],
+                $statement->fetchAll()
+            ),
             'pagination' => [
                 'page' => $page,
                 'limit' => $limit,
@@ -139,6 +171,11 @@ final class UniversityRepository
             $result[$key] = array_column($statement->fetchAll(), $column);
             if ($key === 'education_languages') {
                 $result[$key] = array_values(array_unique($result[$key]));
+            } elseif ($key === 'years') {
+                $result[$key] = array_values(array_unique(array_map(
+                    static fn (mixed $year): int => (int) $year === 2026 ? 2025 : (int) $year,
+                    $result[$key]
+                )));
             }
         }
 
@@ -234,7 +271,11 @@ final class UniversityRepository
         return $statement->fetchAll();
     }
 
-    private function buildFilters(array $filters): array
+    private function buildFilters(
+        array $filters,
+        bool $includeYear = true,
+        string $rankColumn = 'u.base_rank'
+    ): array
     {
         $where = [];
         $params = [];
@@ -265,40 +306,56 @@ final class UniversityRepository
             $params[$name] = '%' . $this->escapeLike($value) . '%';
         }
 
-        $city = trim((string) ($filters['city'] ?? ''));
-        if ($city !== '') {
-            $where[] = 'u.city = :city';
-            $params['city'] = $city;
+        $cities = $this->stringList($filters['city'] ?? [], 'city');
+        if ($cities !== []) {
+            $where[] = $this->inCondition('u.city', 'city', $cities, $params);
         }
 
-        $educationLanguage = trim((string) ($filters['education_language'] ?? ''));
-        if ($educationLanguage !== '') {
-            $where[] = self::educationLanguageSql('u') . ' = :education_language';
-            $params['education_language'] = $educationLanguage;
+        $educationLanguages = $this->stringList(
+            $filters['education_language'] ?? [],
+            'education_language'
+        );
+        if ($educationLanguages !== []) {
+            $where[] = $this->inCondition(
+                self::educationLanguageSql('u'),
+                'education_language',
+                $educationLanguages,
+                $params
+            );
         }
 
         foreach (self::ENUM_FILTERS as $name => $allowed) {
-            $value = trim((string) ($filters[$name] ?? ''));
-            if ($value === '') {
+            $values = $this->stringList($filters[$name] ?? [], $name);
+            if ($values === []) {
                 continue;
             }
-            if (!in_array($value, $allowed, true)) {
-                throw new RuntimeException("{$name} filtresi geçersiz.", 422);
+            foreach ($values as $value) {
+                if (!in_array($value, $allowed, true)) {
+                    throw new RuntimeException("{$name} filtresi geçersiz.", 422);
+                }
             }
-            $where[] = "u.{$name} = :{$name}";
-            $params[$name] = $value;
+            $where[] = $this->inCondition("u.{$name}", $name, $values, $params);
         }
 
-        foreach (['year', 'min_rank', 'max_rank'] as $name) {
+        if ($includeYear) {
+            $years = [];
+            foreach ($this->stringList($filters['year'] ?? [], 'year') as $value) {
+                $years[$this->positiveInt($value, 'year')] = true;
+            }
+            if ($years !== []) {
+                $where[] = $this->inCondition('u.year', 'year', array_keys($years), $params);
+            }
+        }
+
+        foreach (['min_rank', 'max_rank'] as $name) {
             $value = $filters[$name] ?? '';
             if ($value === '' || $value === null) {
                 continue;
             }
             $number = $this->positiveInt($value, $name);
             $column = match ($name) {
-                'year' => 'u.year = :year',
-                'min_rank' => 'u.base_rank >= :min_rank',
-                default => 'u.base_rank <= :max_rank',
+                'min_rank' => $rankColumn . ' >= :min_rank',
+                default => $rankColumn . ' <= :max_rank',
             };
             $where[] = $column;
             $params[$name] = $number;
@@ -309,9 +366,34 @@ final class UniversityRepository
 
     private function availableYears(): array
     {
-        return array_map('intval', $this->pdo->query(
+        $years = array_map('intval', $this->pdo->query(
             'SELECT DISTINCT year FROM universities ORDER BY year DESC'
         )->fetchAll(PDO::FETCH_COLUMN));
+
+        return array_values(array_unique(array_map(
+            static fn (int $year): int => $year === 2026 ? 2025 : $year,
+            $years
+        )));
+    }
+
+    private function latestProgramRowSql(): string
+    {
+        $priority = static fn (string $alias): string => "CASE {$alias}.year "
+            . 'WHEN 2025 THEN 0 WHEN 2026 THEN 1 WHEN 2024 THEN 2 WHEN 2023 THEN 3 ELSE 9 END';
+
+        return 'u.year IN (2023, 2024, 2025, 2026) AND NOT EXISTS ('
+            . 'SELECT 1 FROM universities newer WHERE newer.program_code = u.program_code '
+            . 'AND newer.year IN (2023, 2024, 2025, 2026) AND '
+            . $priority('newer') . ' < ' . $priority('u') . ')';
+    }
+
+    private function rankFilterColumnForSort(string $sort, string $ranking2025): string
+    {
+        return match (true) {
+            str_starts_with($sort, 'rank_2024_') => 'u24.base_rank',
+            str_starts_with($sort, 'rank_2023_') => 'u23.base_rank',
+            default => $ranking2025,
+        };
     }
 
     private function positiveInt(mixed $value, string $name): int

@@ -116,8 +116,8 @@ function validatedRow(array $row): array
     }
 
     $year = nullableInteger($row, 'year', 9999);
-    if ($year !== 2025) {
-        throw new InvalidArgumentException('year alanı bu içe aktarma için 2025 olmalıdır.');
+    if ($year === null || $year < 2025 || $year > 2100) {
+        throw new InvalidArgumentException('year alanı 2025-2100 aralığında olmalıdır.');
     }
 
     $sourceUrl = trim((string) ($row['source_url'] ?? ''));
@@ -185,7 +185,10 @@ try {
     $root = dirname(__DIR__);
     Dotenv::createImmutable($root)->safeLoad();
     $pdo = Connection::make(new Env($_ENV));
-    $exists = $pdo->prepare('SELECT 1 FROM universities WHERE program_code = :program_code LIMIT 1');
+    $exists = $pdo->prepare(
+        'SELECT 1 FROM universities '
+        . 'WHERE program_code = :program_code AND year = :year LIMIT 1'
+    );
     $upsert = $pdo->prepare(<<<SQL
 INSERT INTO universities (
   program_code, university_name, faculty_name, department_name, city,
@@ -227,7 +230,10 @@ SQL);
                 throw new InvalidArgumentException('Kolon sayısı başlık satırıyla eşleşmiyor.');
             }
             $row = validatedRow(array_combine($headers, $values));
-            $exists->execute(['program_code' => $row['program_code']]);
+            $exists->execute([
+                'program_code' => $row['program_code'],
+                'year' => $row['year'],
+            ]);
             $isUpdate = (bool) $exists->fetchColumn();
             $upsert->execute($row);
             $counts[$isUpdate ? 'updated' : 'inserted']++;

@@ -22,6 +22,7 @@ use DersRotasi\Repositories\UniversityRepository;
 use DersRotasi\Repositories\YksEstimateRepository;
 use DersRotasi\Repositories\YksRankDataRepository;
 use DersRotasi\Services\FirebaseTokenVerifier;
+use DersRotasi\Services\OfficialYksRankBandService;
 use DersRotasi\Services\PreferenceEvaluationService;
 use DersRotasi\Services\YksBacktestConfidenceService;
 use DersRotasi\Services\YksRankEstimator;
@@ -136,6 +137,13 @@ try {
 
     if ($method === 'POST' && $path === '/api/yks/estimate') {
         JsonResponse::send(['success' => true, 'data' => $calculateYks($request->json())]);
+    }
+
+    if ($method === 'POST' && $path === '/api/yks/rank-band') {
+        $service = new OfficialYksRankBandService(
+            $root . '/config/yks/official_rank_distributions.php'
+        );
+        JsonResponse::send(['success' => true, 'data' => $service->compare($request->json())]);
     }
 
     if ($method === 'POST' && $path === '/api/ai/chat') {
@@ -407,9 +415,15 @@ try {
                 $groups[$evaluation['label']][] = $candidate;
             }
         }
+        $responseYear = is_array($filters['year'])
+            ? array_values(array_unique(array_map('intval', $filters['year'])))
+            : (int) $filters['year'];
+        if (is_array($responseYear) && count($responseYear) === 1) {
+            $responseYear = $responseYear[0];
+        }
         JsonResponse::send(['success' => true, 'data' => [
             'user_rank' => $rank,
-            'year' => (int) $filters['year'],
+            'year' => $responseYear,
             'groups' => $groups,
             'disclaimer' => 'Bu gruplandırma geçmiş başarı sıralarına dayalı yaklaşık bir değerlendirmedir. Kontenjanlar, sınav zorluğu ve aday tercihleri her yıl değişebilir.',
         ]]);

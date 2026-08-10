@@ -21,10 +21,10 @@ Bu repoda yerel geliştirme için `.env` zaten `127.0.0.1:3306` üzerindeki MySQ
 
 ```bash
 cp .env.example .env
-php -S 127.0.0.1:8080 -t public
+php -S 127.0.0.1:8000 -t public
 ```
 
-`FRONTEND_ORIGIN` CORS için kullanılan tek değişkendir. Vite yapılandırmasında sabit bir port tanımlı değildir; Vite hangi portta çalışıyorsa (varsayılan olarak çoğunlukla `5173`) `.env` içindeki `FRONTEND_ORIGIN` değerini o porta göre güncelleyin. Bu proje için beklenen yerel değer `http://localhost:5176`'dır.
+`FRONTEND_ORIGIN` CORS için kullanılan tek değişkendir. Vite geliştirme sunucusu `5173` portunu kullanır; `.env` içindeki `FRONTEND_ORIGIN` değeri de `http://localhost:5173` olmalıdır.
 
 ## MySQL hazırlığı
 
@@ -156,10 +156,17 @@ composer migrate
 php database/migrate.php
 ```
 
-İçe aktarma aracı yalnızca komut satırında çalışır. Gerçek 2025-YKS verisi, `storage/imports/universities_template.csv` başlıklarına göre hazırlanıp aşağıdaki komutla içe aktarılabilir:
+İçe aktarma aracı yalnızca komut satırında çalışır. Güncel resmî YÖK Atlas tercih kılavuzu önce değişiklik yapmayan küçük bir dry-run ile doğrulanabilir. Export aracı resmî yanıttaki yılı ayrıca kontrol eder ve farklı bir yılı yanlış etiketlemez:
 
 ```bash
-php scripts/import_universities.php storage/imports/universities_2025.csv
+php scripts/fetch_yokatlas_universities.php --dry-run --year=2026 --limit=100
+php scripts/fetch_yokatlas_universities.php --write --year=2026 --limit=25000
+```
+
+Doğrulanan CSV, `storage/imports/universities_template.csv` başlıklarına göre hazırlanır ve mevcut transaction destekli importer ile yerel veritabanına aktarılabilir:
+
+```bash
+php scripts/import_universities.php storage/imports/universities_2026.csv
 ```
 
 Şablon sahte veya örnek program içermez. İçe aktarma aracı veriyi belleğe toplamaz; UTF-8/BOM ve virgül/noktalı virgül ayraçlarını destekler, zorunlu alanları ve izin verilen sabit değerleri doğrular, `program_code` üzerinden ekleme veya güncelleme yapar. Hatalı satırlar numarası ve nedeni ile raporlanır. Gerçek veri dosyası projeye eklenmemeli; `storage/imports/.gitignore` şablon dışındaki CSV dosyalarını dışarıda tutar.
