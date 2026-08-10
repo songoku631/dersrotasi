@@ -130,6 +130,28 @@ function printOsymSummary(array $report, array $paths): void
         $totals['conflicts'],
         $totals['missing_source'],
     ));
+    $coverage = $report['coverage_before'];
+    $rankAudit = $report['rank_audit'][2024];
+    fwrite(STDOUT, sprintf(
+        "2024 coverage: rows=%d null=%d current_missing=%d row_null=%d row_missing=%d complete_3y=%d\n",
+        $coverage['total_2024_rows'],
+        $coverage['null_2024_ranks'],
+        $coverage['current_2025_missing_2024_rank'],
+        $coverage['same_code_2024_row_rank_null'],
+        $coverage['same_code_2024_row_missing'],
+        $coverage['complete_three_year_series'],
+    ));
+    fwrite(STDOUT, sprintf(
+        "2024 official rank audit: programs=%d ranked=%d matched=%d fillable=%d already=%d conflicts=%d db_unmatched=%d official_unmatched=%d\n",
+        $rankAudit['official_programs'],
+        $rankAudit['official_ranked_programs'],
+        $rankAudit['program_code_matched'],
+        $rankAudit['null_rank_fillable'],
+        $rankAudit['already_filled_same'],
+        $rankAudit['conflicts'],
+        $rankAudit['database_without_official_program'],
+        $rankAudit['official_without_database_row'],
+    ));
     fwrite(STDOUT, "JSON: {$paths['json']}\nCSV: {$paths['csv']}\n");
 }
 
@@ -199,12 +221,20 @@ try {
         $repository->beginReadOnly();
     }
     $before = $repository->integritySnapshot();
+    $coverageBefore = $repository->rankCoverage();
     $targetBefore = $repository->programHistory('203110477');
-    $plan = (new OsymHistoricalBackfillService())->buildPlan($repository->historicalRows(), $datasets);
+    $historicalRows = $repository->historicalRows();
+    $service = new OsymHistoricalBackfillService();
+    $rankAudit = [];
+    foreach ([2023, 2024] as $year) {
+        $rankAudit[$year] = $service->auditRanks($historicalRows, $datasets[$year]['guide'], $year);
+    }
+    $plan = $service->buildPlan($historicalRows, $datasets);
     $applyResult = null;
     if ($options['apply']) {
         $applyResult = $repository->applyUpdates($plan['updates']);
         $after = $repository->integritySnapshot();
+        $coverageAfter = $repository->rankCoverage();
         $repository->assertIntegrityUnchanged($before, $after);
         $targetAfter = $repository->programHistory('203110477');
         $repository->commit();
@@ -214,6 +244,7 @@ try {
         unset($change);
     } else {
         $after = $repository->integritySnapshot();
+        $coverageAfter = $repository->rankCoverage();
         $repository->assertIntegrityUnchanged($before, $after);
         $targetAfter = $targetBefore;
         $repository->rollBack();
@@ -233,10 +264,13 @@ try {
         'parser_metadata' => $parserMetadata,
         'source_duplicates' => $sourceDuplicates,
         'counts' => $plan['counts'],
+        'rank_audit' => $rankAudit,
         'totals' => $plan['totals'],
         'apply_result' => $applyResult,
         'integrity_before' => $before,
         'integrity_after' => $after,
+        'coverage_before' => $coverageBefore,
+        'coverage_after' => $coverageAfter,
         'target_203110477' => [
             'before' => $targetBefore,
             'after' => $targetAfter,

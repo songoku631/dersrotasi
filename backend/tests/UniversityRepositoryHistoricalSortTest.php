@@ -44,6 +44,16 @@ $pdo->exec(
         UNIQUE (program_code, year)
     )'
 );
+$pdo->exec(
+    'CREATE TABLE program_historical_mappings (
+        current_program_code TEXT NOT NULL,
+        historical_program_code TEXT NOT NULL,
+        historical_year INTEGER NOT NULL,
+        confidence TEXT NOT NULL,
+        verification_status TEXT NOT NULL,
+        UNIQUE (current_program_code, historical_year)
+    )'
+);
 
 $insert = $pdo->prepare(
     'INSERT INTO universities (
@@ -62,6 +72,8 @@ $fixtures = [
     [21492, '203110477', 2023, $university, 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 555.35802, 30],
     [78, '203190967', 2025, $university, 'TIP FAKÜLTESİ', $department, ...$common, 533.83234, 1321],
     [21637, '203190967', 2024, $university, 'TIP FAKÜLTESİ', $department, ...$common, 554.91557, 31],
+    [21638, '203100001', 2023, 'TARİHSEL KAYNAK ÜNİVERSİTESİ', 'TIP FAKÜLTESİ', $department, ...$common, 540.00000, 999],
+    [21639, '203100002', 2023, 'TARİHSEL KAYNAK ÜNİVERSİTESİ', 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 530.00000, 777],
 ];
 
 foreach ($fixtures as $fixture) {
@@ -75,6 +87,16 @@ foreach ($fixtures as $fixture) {
     ]);
 }
 
+$mappingInsert = $pdo->prepare(
+    'INSERT INTO program_historical_mappings (
+        current_program_code, historical_program_code, historical_year,
+        confidence, verification_status
+    ) VALUES (?, ?, ?, ?, ?)'
+);
+$mappingInsert->execute(['203190967', '203100001', 2023, 'high', 'verified']);
+// Exact same-code row must win even when a verified mapping also exists.
+$mappingInsert->execute(['203110477', '203100002', 2023, 'high', 'verified']);
+
 $expected = [
     '203110477' => [
         'id' => 1,
@@ -84,7 +106,7 @@ $expected = [
     '203190967' => [
         'id' => 78,
         'faculty' => 'TIP FAKÜLTESİ',
-        'rankings' => [2025 => 1321, 2024 => 31, 2023 => null],
+        'rankings' => [2025 => 1321, 2024 => 31, 2023 => 999],
     ],
 ];
 $baseline = null;

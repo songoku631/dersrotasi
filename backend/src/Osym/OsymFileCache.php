@@ -67,7 +67,7 @@ final class OsymFileCache
         }
         $headers = $this->download((string) $source['url'], $temporary);
         try {
-            $this->validateSignature($temporary);
+            $this->validateSignature($temporary, $filename);
             $sha256 = hash_file('sha256', $temporary);
             $remoteChanged = is_array($old)
                 && isset($old['sha256'])
@@ -119,7 +119,7 @@ final class OsymFileCache
         throw new RuntimeException("ÖSYM dosyası indirilemedi: {$url}");
     }
 
-    private function validateSignature(string $path): void
+    private function validateSignature(string $path, ?string $expectedFilename = null): void
     {
         $handle = fopen($path, 'rb');
         if ($handle === false) {
@@ -130,7 +130,7 @@ final class OsymFileCache
         } finally {
             fclose($handle);
         }
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $extension = strtolower(pathinfo($expectedFilename ?? $path, PATHINFO_EXTENSION));
         $valid = $extension === 'xlsx'
             ? str_starts_with((string) $signature, "PK\x03\x04")
             : $extension === 'xls' && $signature === "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";

@@ -26,10 +26,10 @@ final class UniversityRepository
         'score_asc' => 'u.base_score IS NULL, u.base_score ASC',
         'rank_2025_asc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 ASC',
         'rank_2025_desc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 DESC',
-        'rank_2024_asc' => '(u24.base_rank IS NULL OR u24.base_rank <= 0), u24.base_rank ASC',
-        'rank_2024_desc' => '(u24.base_rank IS NULL OR u24.base_rank <= 0), u24.base_rank DESC',
-        'rank_2023_asc' => '(u23.base_rank IS NULL OR u23.base_rank <= 0), u23.base_rank ASC',
-        'rank_2023_desc' => '(u23.base_rank IS NULL OR u23.base_rank <= 0), u23.base_rank DESC',
+        'rank_2024_asc' => '(ranking_2024 IS NULL OR ranking_2024 <= 0), ranking_2024 ASC',
+        'rank_2024_desc' => '(ranking_2024 IS NULL OR ranking_2024 <= 0), ranking_2024 DESC',
+        'rank_2023_asc' => '(ranking_2023 IS NULL OR ranking_2023 <= 0), ranking_2023 ASC',
+        'rank_2023_desc' => '(ranking_2023 IS NULL OR ranking_2023 <= 0), ranking_2023 DESC',
         'score_2025_desc' => 'score_2025 IS NULL, score_2025 DESC',
         'score_2025_asc' => 'score_2025 IS NULL, score_2025 ASC',
         'university_asc' => 'u.university_name ASC',
@@ -63,7 +63,14 @@ final class UniversityRepository
 
         $ranking2025 = 'CASE WHEN u25.id IS NOT NULL THEN u25.base_rank ELSE u26.base_rank END';
         $score2025 = 'CASE WHEN u25.id IS NOT NULL THEN u25.base_score ELSE u26.base_score END';
-        $rankFilterColumn = $this->rankFilterColumnForSort($sort, $ranking2025);
+        $ranking2024 = 'CASE WHEN u24.id IS NOT NULL THEN u24.base_rank ELSE u24_mapped.base_rank END';
+        $ranking2023 = 'CASE WHEN u23.id IS NOT NULL THEN u23.base_rank ELSE u23_mapped.base_rank END';
+        $rankFilterColumn = $this->rankFilterColumnForSort(
+            $sort,
+            $ranking2025,
+            $ranking2024,
+            $ranking2023,
+        );
         [$where, $params] = $this->buildFilters($filters, false, $rankFilterColumn);
         array_unshift($where, $this->latestProgramRowSql());
         $favoritesOnly = filter_var($filters['favorites_only'] ?? false, FILTER_VALIDATE_BOOL);
@@ -74,7 +81,17 @@ final class UniversityRepository
         $historyJoins = ' LEFT JOIN universities u25 ON u25.program_code = u.program_code AND u25.year = 2025'
             . ' LEFT JOIN universities u26 ON u26.program_code = u.program_code AND u26.year = 2026 AND u25.id IS NULL'
             . ' LEFT JOIN universities u24 ON u24.program_code = u.program_code AND u24.year = 2024'
-            . ' LEFT JOIN universities u23 ON u23.program_code = u.program_code AND u23.year = 2023';
+            . ' LEFT JOIN program_historical_mappings m24 ON m24.current_program_code = u.program_code'
+            . ' AND m24.historical_year = 2024 AND m24.confidence = \'high\''
+            . ' AND m24.verification_status = \'verified\' AND u24.id IS NULL'
+            . ' LEFT JOIN universities u24_mapped ON u24_mapped.program_code = m24.historical_program_code'
+            . ' AND u24_mapped.year = 2024 AND u24.id IS NULL'
+            . ' LEFT JOIN universities u23 ON u23.program_code = u.program_code AND u23.year = 2023'
+            . ' LEFT JOIN program_historical_mappings m23 ON m23.current_program_code = u.program_code'
+            . ' AND m23.historical_year = 2023 AND m23.confidence = \'high\''
+            . ' AND m23.verification_status = \'verified\' AND u23.id IS NULL'
+            . ' LEFT JOIN universities u23_mapped ON u23_mapped.program_code = m23.historical_program_code'
+            . ' AND u23_mapped.year = 2023 AND u23.id IS NULL';
         $favoriteJoin = '';
         $favoriteSelect = '0 AS is_favorite, NULL AS favorite_id';
         if ($firebaseUid !== null) {
@@ -102,10 +119,14 @@ final class UniversityRepository
         $sql = 'SELECT u.*, u.year AS source_year, '
             . self::educationLanguageSql('u') . ' AS education_language, '
             . $favoriteSelect . ', '
-            . $ranking2025 . ' AS ranking_2025, u24.base_rank AS ranking_2024, u23.base_rank AS ranking_2023, '
-            . $score2025 . ' AS score_2025, u24.base_score AS score_2024, u23.base_score AS score_2023, '
+            . $ranking2025 . ' AS ranking_2025, '
+            . $ranking2024 . ' AS ranking_2024, ' . $ranking2023 . ' AS ranking_2023, '
+            . $score2025 . ' AS score_2025, '
+            . 'CASE WHEN u24.id IS NOT NULL THEN u24.base_score ELSE u24_mapped.base_score END AS score_2024, '
+            . 'CASE WHEN u23.id IS NOT NULL THEN u23.base_score ELSE u23_mapped.base_score END AS score_2023, '
             . 'CASE WHEN u25.id IS NOT NULL THEN u25.quota ELSE u26.quota END AS quota_2025, '
-            . 'u24.quota AS quota_2024, u23.quota AS quota_2023 '
+            . 'CASE WHEN u24.id IS NOT NULL THEN u24.quota ELSE u24_mapped.quota END AS quota_2024, '
+            . 'CASE WHEN u23.id IS NOT NULL THEN u23.quota ELSE u23_mapped.quota END AS quota_2023 '
             . 'FROM universities u' . $historyJoins
             . $favoriteJoin . $whereSql
             . ' ORDER BY ' . self::SORTS[$sort] . ', u.id ASC LIMIT :limit OFFSET :offset';
@@ -387,11 +408,16 @@ final class UniversityRepository
             . $priority('newer') . ' < ' . $priority('u') . ')';
     }
 
-    private function rankFilterColumnForSort(string $sort, string $ranking2025): string
+    private function rankFilterColumnForSort(
+        string $sort,
+        string $ranking2025,
+        string $ranking2024,
+        string $ranking2023,
+    ): string
     {
         return match (true) {
-            str_starts_with($sort, 'rank_2024_') => 'u24.base_rank',
-            str_starts_with($sort, 'rank_2023_') => 'u23.base_rank',
+            str_starts_with($sort, 'rank_2024_') => $ranking2024,
+            str_starts_with($sort, 'rank_2023_') => $ranking2023,
             default => $ranking2025,
         };
     }

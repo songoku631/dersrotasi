@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 use DersRotasi\Osym\OsymHistoricalBackfillRepository;
 use DersRotasi\Osym\OsymHistoricalBackfillService;
+use DersRotasi\Osym\OsymFileCache;
 use DersRotasi\Osym\OsymHistoricalValueParser;
 use DersRotasi\Osym\OsymSpreadsheetParser;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xls;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -20,10 +25,10 @@ function osymCheck(bool $condition, string $message): void
 }
 
 /** @return array<string, int|string> */
-function osymTestSource(string $kind, int $table, string $filename): array
+function osymTestSource(string $kind, int $table, string $filename, int $historicalYear = 2023): array
 {
     return [
-        'historical_year' => 2023,
+        'historical_year' => $historicalYear,
         'kind' => $kind,
         'table' => $table,
         'filename' => $filename,
@@ -82,6 +87,31 @@ function writeGuideFixture(string $path, int $table): void
     $book->disconnectWorksheets();
 }
 
+function writeMultiYearGuideFixture(string $path): void
+{
+    $book = new Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    foreach ([[10, 2023, 30, 555.35802], [12, 2024, 31, 554.91557]] as [$column, $year, $rank, $score]) {
+        $sheet->setCellValue([$column, 1], "{$year}-YKS");
+        $sheet->setCellValue([$column + 1, 1], "{$year}-YKS");
+        $sheet->setCellValue([$column, 2], 'BAŞARI');
+        $sheet->setCellValue([$column + 1, 2], 'EN KÜÇÜK');
+        $sheet->setCellValue([$column, 3], 'SIRASI');
+        $sheet->setCellValue([$column + 1, 3], 'PUANI');
+        $sheet->setCellValue([$column, 4], $rank);
+        $sheet->setCellValue([$column + 1, 4], $score);
+    }
+    $sheet->setCellValue('A2', 'PROGRAM');
+    $sheet->setCellValue('B2', 'PROGRAM ADI (2)');
+    $sheet->setCellValue('D2', 'PUAN TÜRÜ');
+    $sheet->setCellValue('A3', 'KODU (1)');
+    $sheet->setCellValue('A4', '203110477');
+    $sheet->setCellValue('B4', 'Tıp (İngilizce) (Burslu)');
+    $sheet->setCellValue('D4', 'SAY');
+    (new Xls($book))->save($path);
+    $book->disconnectWorksheets();
+}
+
 $values = new OsymHistoricalValueParser();
 osymCheck($values->programCode(203110477.0) === '203110477', 'Numeric program code normalize edilmedi.');
 osymCheck($values->programCode('203110477.0') === '203110477', 'String program code normalize edilmedi.');
@@ -97,19 +127,32 @@ foreach (['', '...', '-', '0', '12,5', null] as $invalidRank) {
 
 $root = sys_get_temp_dir() . '/dersrotasi_osym_test_' . bin2hex(random_bytes(5));
 mkdir($root, 0770, true);
+$cacheClient = new Client(['handler' => HandlerStack::create(new MockHandler([
+    new Response(200, [], "PK\x03\x04fixture"),
+]))]);
+$cached = (new OsymFileCache($root . '/cache-fixture', $cacheClient))->ensure(
+    osymTestSource('result', 4, 'download.xlsx'),
+);
+osymCheck(is_file($cached['path']), 'Geçici .part dosyası beklenen xlsx uzantısıyla doğrulanmadı.');
 $resultPath = $root . '/result.xlsx';
 $duplicatePath = $root . '/duplicate.xlsx';
 $guide3Path = $root . '/guide3.xls';
 $guide4Path = $root . '/guide4.xls';
+$multiYearGuidePath = $root . '/multi-year-guide.xls';
 writeResultFixture($resultPath);
 writeResultFixture($duplicatePath, true);
 writeGuideFixture($guide3Path, 3);
 writeGuideFixture($guide4Path, 4);
+writeMultiYearGuideFixture($multiYearGuidePath);
 
 $parser = new OsymSpreadsheetParser($values);
 $result = $parser->parse($resultPath, osymTestSource('result', 4, 'result.xlsx'));
 $guide3 = $parser->parse($guide3Path, osymTestSource('guide', 3, 'guide3.xls'));
 $guide4 = $parser->parse($guide4Path, osymTestSource('guide', 4, 'guide4.xls'));
+$guide2024 = $parser->parse(
+    $multiYearGuidePath,
+    osymTestSource('guide', 4, 'multi-year-guide.xls', 2024),
+);
 $duplicate = $parser->parse($duplicatePath, osymTestSource('result', 4, 'duplicate.xlsx'));
 osymCheck($result['rows']['203110477']['score'] === '555.35802', 'Result En Küçük Puan parse edilmedi.');
 osymCheck($result['rows']['203110477']['placed_count'] === 10, 'Result Yerleşen parse edilmedi.');
@@ -117,6 +160,8 @@ osymCheck($guide3['rows']['203110477']['rank'] === 30, 'Tablo-3 rank kolonu bulu
 osymCheck($guide4['rows']['203110477']['rank'] === 30, 'Tablo-4 rank kolonu bulunamadı.');
 osymCheck($guide3['rows']['203110477']['score'] === '555.35802', 'Tablo-3 score kolonu bulunamadı.');
 osymCheck($guide4['rows']['203110477']['score'] === '555.35802', 'Tablo-4 score kolonu bulunamadı.');
+osymCheck($guide2024['rows']['203110477']['rank'] === 31, '2024 yerine yanlış yılın rank kolonu okundu.');
+osymCheck($guide2024['rows']['203110477']['score'] === '554.91557', '2024 yerine yanlış yılın score kolonu okundu.');
 osymCheck(count($duplicate['duplicates']) === 1 && $duplicate['rows'] === [], 'Duplicate source algılanmadı.');
 
 $sourceRows = [
@@ -128,6 +173,8 @@ $databaseRow = [
     'base_score' => null, 'base_rank' => null, 'quota' => 10, 'placed_count' => null,
 ];
 $service = new OsymHistoricalBackfillService();
+$rankAudit = $service->auditRanks([$databaseRow], $guide4['rows'], 2023);
+osymCheck($rankAudit['null_rank_fillable'] === 1, 'NULL rank audit doldurulabilir kaydı saymadı.');
 $plan = $service->buildPlan([$databaseRow], $sourceRows);
 osymCheck($plan['totals']['score_cells'] === 1, '203110477 score candidate oluşmadı.');
 osymCheck($plan['totals']['rank_cells'] === 1, '203110477 rank candidate oluşmadı.');
@@ -139,6 +186,11 @@ $conflictRow['base_score'] = '500.00000';
 $conflictPlan = $service->buildPlan([$conflictRow], $sourceRows);
 osymCheck($conflictPlan['totals']['conflicts'] === 1, 'Non-NULL DB conflict algılanmadı.');
 osymCheck($conflictPlan['totals']['score_cells'] === 0, 'Conflict score update adayı yapıldı.');
+$rankConflictRow = $databaseRow;
+$rankConflictRow['base_rank'] = 99;
+$rankConflictAudit = $service->auditRanks([$rankConflictRow], $guide4['rows'], 2023);
+osymCheck($rankConflictAudit['conflicts'] === 1, 'Dolu farklı rank audit conflict üretmedi.');
+osymCheck($rankConflictAudit['null_rank_fillable'] === 0, 'Dolu farklı rank overwrite adayı oldu.');
 
 $conflictingGuide = $guide4['rows'];
 $conflictingGuide['203110477']['score'] = '554.00000';
@@ -173,9 +225,15 @@ try {
     osymCheck(str_contains($exception->getMessage(), 'NULL-only guard'), 'Beklenmeyen repository hatası.');
 }
 
-foreach ([$resultPath, $duplicatePath, $guide3Path, $guide4Path] as $path) {
+foreach ([$resultPath, $duplicatePath, $guide3Path, $guide4Path, $multiYearGuidePath] as $path) {
     unlink($path);
 }
+unlink($root . '/cache-fixture/storage/osym/cache/download.xlsx');
+unlink($root . '/cache-fixture/storage/osym/cache/manifest.json');
+rmdir($root . '/cache-fixture/storage/osym/cache');
+rmdir($root . '/cache-fixture/storage/osym');
+rmdir($root . '/cache-fixture/storage');
+rmdir($root . '/cache-fixture');
 rmdir($root);
 
 echo "OsymHistoricalBackfillTest: OK\n";

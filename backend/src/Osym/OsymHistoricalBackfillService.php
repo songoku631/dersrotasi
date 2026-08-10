@@ -127,6 +127,71 @@ final class OsymHistoricalBackfillService
         ];
     }
 
+    /**
+     * @param list<array<string, mixed>> $databaseRows
+     * @param array<string, array<string, mixed>> $guideRows
+     * @return array<string, int>
+     */
+    public function auditRanks(array $databaseRows, array $guideRows, int $year): array
+    {
+        if (!in_array($year, [2023, 2024], true)) {
+            throw new RuntimeException('ÖSYM rank audit yalnız 2023/2024 için çalışabilir.');
+        }
+
+        $databaseByCode = [];
+        foreach ($databaseRows as $databaseRow) {
+            if ((int) ($databaseRow['year'] ?? 0) === $year) {
+                $databaseByCode[(string) $databaseRow['program_code']] = $databaseRow;
+            }
+        }
+
+        $counts = [
+            'official_programs' => count($guideRows),
+            'official_ranked_programs' => 0,
+            'database_rows' => count($databaseByCode),
+            'program_code_matched' => 0,
+            'null_rank_fillable' => 0,
+            'already_filled_same' => 0,
+            'conflicts' => 0,
+            'database_without_official_program' => 0,
+            'database_without_usable_official_rank' => 0,
+            'official_without_database_row' => 0,
+        ];
+
+        foreach ($guideRows as $programCode => $guideRow) {
+            if (($guideRow['rank'] ?? null) !== null) {
+                $counts['official_ranked_programs']++;
+            }
+            if (!isset($databaseByCode[$programCode])) {
+                $counts['official_without_database_row']++;
+            }
+        }
+
+        foreach ($databaseByCode as $programCode => $databaseRow) {
+            $guideRow = $guideRows[$programCode] ?? null;
+            if ($guideRow === null) {
+                $counts['database_without_official_program']++;
+                continue;
+            }
+            $counts['program_code_matched']++;
+            $officialRank = $guideRow['rank'] ?? null;
+            if ($officialRank === null) {
+                $counts['database_without_usable_official_rank']++;
+                continue;
+            }
+            $databaseRank = $this->normalizeDatabaseValue('base_rank', $databaseRow['base_rank'] ?? null);
+            if ($databaseRank === null) {
+                $counts['null_rank_fillable']++;
+            } elseif ($this->same('base_rank', $databaseRank, $officialRank)) {
+                $counts['already_filled_same']++;
+            } else {
+                $counts['conflicts']++;
+            }
+        }
+
+        return $counts;
+    }
+
     /** @return array<string, int> */
     private function emptyCounts(): array
     {
