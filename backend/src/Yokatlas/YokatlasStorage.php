@@ -47,6 +47,16 @@ final class YokatlasStorage
         $this->writeJson($this->pageCachePath($year, $page, $size), $payload);
     }
 
+    public function readPlacementPage(int $year, int $page, int $size): ?array
+    {
+        return $this->readJson($this->placementPagePath($year, $page, $size));
+    }
+
+    public function writePlacementPage(int $year, int $page, int $size, array $payload): void
+    {
+        $this->writeJson($this->placementPagePath($year, $page, $size), $payload);
+    }
+
     public function readState(int $year, string $mode): ?array
     {
         return $this->readJson($this->statePath($year, $mode));
@@ -98,6 +108,14 @@ final class YokatlasStorage
         return ['json' => $jsonPath, 'csv' => $csvPath];
     }
 
+    public function writePlacementReport(array $report): string
+    {
+        $stamp = date('Ymd_His') . '_' . substr(hash('sha256', (string) microtime(true)), 0, 8);
+        $path = $this->reportsDirectory . "/yokatlas_placement_{$stamp}.json";
+        $this->writeJson($path, $report);
+        return $path;
+    }
+
     private function cachePath(int $year, string $programCode): string
     {
         return $this->cacheDirectory . "/{$year}_{$programCode}.json";
@@ -106,6 +124,12 @@ final class YokatlasStorage
     private function pageCachePath(int $year, int $page, int $size): string
     {
         return $this->cacheDirectory . sprintf('/page_%d_%06d_size_%d.json', $year, $page, $size);
+    }
+
+    private function placementPagePath(int $year, int $page, int $size): string
+    {
+        return $this->cacheDirectory
+            . sprintf('/placement_%d_page_%06d_size_%d.json', $year, $page, $size);
     }
 
     private function statePath(int $year, string $mode): string

@@ -9,11 +9,6 @@ use Dotenv\Dotenv;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-if (PHP_SAPI !== 'cli') {
-    fwrite(STDERR, "Bu araç yalnızca komut satırından çalıştırılabilir.\n");
-    exit(1);
-}
-
 const EXPECTED_HEADERS = [
     'program_code', 'university_name', 'faculty_name', 'department_name', 'city',
     'university_type', 'score_type', 'education_type', 'education_language',
@@ -26,11 +21,16 @@ const ENUMS = [
     'education_type' => ['orgun', 'ikinci_ogretim', 'uzaktan', 'acikogretim', 'diger'],
     'scholarship_type' => ['ucretsiz', 'burslu', 'yuzde_50', 'yuzde_25', 'ucretli', 'diger'],
 ];
+const IMPORT_FIELDS = [
+    'program_code', 'identity_hash', 'university_name', 'faculty_name', 'department_name',
+    'city', 'university_type', 'score_type', 'education_type', 'education_language',
+    'scholarship_type', 'base_score', 'base_rank', 'rank_source_name', 'rank_source_url',
+    'quota', 'placed_count', 'duration_years', 'year', 'source_year', 'source_name', 'source_url',
+];
 
-function fail(string $message, int $code = 1): never
-{
-    fwrite(STDERR, $message . PHP_EOL);
-    exit($code);
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "Bu araç yalnızca komut satırından çalıştırılabilir.\n");
+    exit(1);
 }
 
 function detectDelimiter(string $headerLine): string
@@ -40,8 +40,7 @@ function detectDelimiter(string $headerLine): string
             return $delimiter;
         }
     }
-
-    throw new RuntimeException('CSV ayıracı algılanamadı; virgül veya noktalı virgül kullanın.');
+    throw new RuntimeException('CSV ayracı algılanamadı.');
 }
 
 function requiredString(array $row, string $field): string
@@ -50,7 +49,9 @@ function requiredString(array $row, string $field): string
     if ($value === '') {
         throw new InvalidArgumentException("{$field} alanı zorunludur.");
     }
-
+    if (preg_match('//u', $value) !== 1) {
+        throw new InvalidArgumentException("{$field} geçerli UTF-8 değil.");
+    }
     return $value;
 }
 
@@ -60,7 +61,6 @@ function enumValue(array $row, string $field): string
     if (!in_array($value, ENUMS[$field], true)) {
         throw new InvalidArgumentException("{$field} değeri geçersiz: {$value}");
     }
-
     return $value;
 }
 
@@ -70,17 +70,14 @@ function nullableInteger(array $row, string $field, int $maximum = PHP_INT_MAX):
     if ($value === '') {
         return null;
     }
-
     $normalized = str_replace(["\u{00A0}", ' ', '.', ','], '', $value);
     if (!ctype_digit($normalized)) {
-        throw new InvalidArgumentException("{$field} pozitif tam sayı olmalıdır.");
+        throw new InvalidArgumentException("{$field} negatif olmayan tam sayı olmalıdır.");
     }
-
     $number = (int) $normalized;
     if ($number < 0 || $number > $maximum) {
         throw new InvalidArgumentException("{$field} izin verilen aralığın dışındadır.");
     }
-
     return $number;
 }
 
@@ -90,7 +87,6 @@ function nullableDecimal(array $row, string $field): ?string
     if ($value === '') {
         return null;
     }
-
     $value = str_replace(["\u{00A0}", ' '], '', $value);
     if (str_contains($value, ',') && str_contains($value, '.')) {
         $value = strrpos($value, ',') > strrpos($value, '.')
@@ -99,37 +95,46 @@ function nullableDecimal(array $row, string $field): ?string
     } elseif (str_contains($value, ',')) {
         $value = str_replace(',', '.', $value);
     }
-
-    if (!preg_match('/^\d+(?:\.\d{1,5})?$/', $value)) {
-        throw new InvalidArgumentException("{$field} geçerli bir sayı olmalıdır.");
+    if (!preg_match('/^\d+(?:\.\d{1,5})?$/', $value) || (float) $value <= 0) {
+        throw new InvalidArgumentException("{$field} pozitif ve geçerli bir decimal olmalıdır.");
     }
-
     return number_format((float) $value, 5, '.', '');
 }
 
-function validatedRow(array $row): array
+/** @return array<string, mixed> */
+function validatedRow(array $row, int $expectedYear): array
 {
-    foreach ($row as $value) {
-        if (preg_match('//u', (string) $value) !== 1) {
-            throw new InvalidArgumentException('Satır geçerli UTF-8 değil.');
-        }
+    $programCode = requiredString($row, 'program_code');
+    if (preg_match('/^[0-9]{9}$/', $programCode) !== 1) {
+        throw new InvalidArgumentException('program_code tam olarak 9 rakam olmalıdır.');
     }
-
-    $year = nullableInteger($row, 'year', 9999);
-    if ($year === null || $year < 2025 || $year > 2100) {
-        throw new InvalidArgumentException('year alanı 2025-2100 aralığında olmalıdır.');
+    $year = nullableInteger($row, 'year', 2100);
+    if ($year !== $expectedYear) {
+        throw new InvalidArgumentException("CSV yalnız {$expectedYear} satırları içermelidir.");
     }
-
-    $sourceUrl = trim((string) ($row['source_url'] ?? ''));
-    if ($sourceUrl !== '' && filter_var($sourceUrl, FILTER_VALIDATE_URL) === false) {
-        throw new InvalidArgumentException('source_url geçerli bir HTTP(S) adresi olmalıdır.');
+    $sourceName = requiredString($row, 'source_name');
+    $officialSourceNames = [
+        "YÖK Atlas {$expectedYear}",
+        "YÖK Atlas {$expectedYear} + ÖSYM {$expectedYear} yerleştirme tabloları",
+    ];
+    if (!in_array($sourceName, $officialSourceNames, true)) {
+        throw new InvalidArgumentException('source_name resmî 2026 kaynağıyla eşleşmiyor.');
     }
-    if ($sourceUrl !== '' && !in_array(parse_url($sourceUrl, PHP_URL_SCHEME), ['http', 'https'], true)) {
-        throw new InvalidArgumentException('source_url yalnızca HTTP(S) olabilir.');
+    $sourceUrl = requiredString($row, 'source_url');
+    if (filter_var($sourceUrl, FILTER_VALIDATE_URL) === false
+        || parse_url($sourceUrl, PHP_URL_SCHEME) !== 'https'
+        || parse_url($sourceUrl, PHP_URL_HOST) !== 'yokatlas.yok.gov.tr') {
+        throw new InvalidArgumentException('source_url resmî YÖK Atlas HTTPS adresi olmalıdır.');
     }
+    $baseRank = nullableInteger($row, 'base_rank');
+    if ($baseRank !== null && $baseRank < 1) {
+        throw new InvalidArgumentException('base_rank varsa pozitif olmalıdır.');
+    }
+    $baseScore = nullableDecimal($row, 'base_score');
 
     return [
-        'program_code' => requiredString($row, 'program_code'),
+        'program_code' => $programCode,
+        'identity_hash' => hash('sha256', $programCode),
         'university_name' => requiredString($row, 'university_name'),
         'faculty_name' => trim((string) ($row['faculty_name'] ?? '')),
         'department_name' => requiredString($row, 'department_name'),
@@ -142,121 +147,249 @@ function validatedRow(array $row): array
             $row['education_language'] ?? null,
         ),
         'scholarship_type' => enumValue($row, 'scholarship_type'),
-        'base_score' => nullableDecimal($row, 'base_score'),
-        'base_rank' => nullableInteger($row, 'base_rank'),
+        'base_score' => $baseScore,
+        'base_rank' => $baseRank,
+        'rank_source_name' => $baseRank === null ? null : "YÖK Atlas {$expectedYear}",
+        'rank_source_url' => $baseRank === null ? null : $sourceUrl,
         'quota' => nullableInteger($row, 'quota'),
         'placed_count' => nullableInteger($row, 'placed_count'),
         'duration_years' => nullableInteger($row, 'duration_years', 20),
         'year' => $year,
-        'source_name' => requiredString($row, 'source_name'),
-        'source_url' => $sourceUrl !== '' ? $sourceUrl : null,
+        'source_year' => $year,
+        'source_name' => $sourceName,
+        'source_url' => $sourceUrl,
     ];
 }
 
-$filePath = $argv[1] ?? '';
-if ($filePath === '') {
-    fail('Kullanım: php scripts/import_universities.php <csv-dosyası>');
+/** @return array<int, array<string, int|string>> */
+function protectedSnapshot(PDO $pdo): array
+{
+    $contexts = [];
+    $counts = [];
+    $statement = $pdo->query('SELECT * FROM universities WHERE year IN (2023, 2024, 2025) ORDER BY year, id');
+    while ($row = $statement->fetch()) {
+        $year = (int) $row['year'];
+        if (!isset($contexts[$year])) {
+            $contexts[$year] = hash_init('sha256');
+            $counts[$year] = 0;
+        }
+        hash_update(
+            $contexts[$year],
+            json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n",
+        );
+        $counts[$year]++;
+    }
+    $snapshot = [];
+    foreach ($contexts as $year => $context) {
+        $snapshot[$year] = ['rows' => $counts[$year], 'sha256' => hash_final($context)];
+    }
+    return $snapshot;
 }
-if (!is_file($filePath) || !is_readable($filePath)) {
-    fail('CSV dosyası bulunamadı veya okunamıyor.');
+
+function rowsEquivalent(array $incoming, array $existing): bool
+{
+    foreach (IMPORT_FIELDS as $field) {
+        $left = $incoming[$field] ?? null;
+        $right = $existing[$field] ?? null;
+        if (in_array($field, ['base_score'], true)) {
+            if (($left === null) !== ($right === null)
+                || ($left !== null && abs((float) $left - (float) $right) > 0.00001)) {
+                return false;
+            }
+            continue;
+        }
+        if ((string) ($left ?? '') !== (string) ($right ?? '')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+$filePath = $argv[1] ?? '';
+$mode = 'dry-run';
+$expectedYear = 2026;
+foreach (array_slice($argv, 2) as $argument) {
+    if ($argument === '--dry-run') {
+        $mode = 'dry-run';
+    } elseif ($argument === '--apply') {
+        $mode = 'apply';
+    } elseif (str_starts_with($argument, '--year=')) {
+        $expectedYear = (int) substr($argument, strlen('--year='));
+    } else {
+        throw new RuntimeException('Bilinmeyen seçenek: ' . $argument);
+    }
+}
+if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
+    fwrite(STDERR, "Kullanım: php scripts/import_universities.php <csv> [--dry-run|--apply] --year=2026\n");
+    exit(1);
+}
+if ($expectedYear !== 2026) {
+    fwrite(STDERR, "Bu güvenli importer yalnız 2026 veri setini kabul eder.\n");
+    exit(1);
 }
 
 $handle = fopen($filePath, 'rb');
 if ($handle === false) {
-    fail('CSV dosyası açılamadı.');
+    fwrite(STDERR, "CSV açılamadı.\n");
+    exit(1);
 }
-
-$startedAt = microtime(true);
-$firstLine = fgets($handle);
-if ($firstLine === false) {
-    fclose($handle);
-    fail('CSV dosyası boş.');
-}
-$firstLine = preg_replace('/^\xEF\xBB\xBF/', '', $firstLine) ?? $firstLine;
 
 try {
+    $firstLine = fgets($handle);
+    if ($firstLine === false) {
+        throw new RuntimeException('CSV boş.');
+    }
+    $firstLine = preg_replace('/^\xEF\xBB\xBF/', '', $firstLine) ?? $firstLine;
     $delimiter = detectDelimiter($firstLine);
-    $headers = str_getcsv(rtrim($firstLine, "\r\n"), $delimiter, '"', '\\');
-    $headers = array_map(static fn ($value) => trim((string) $value), $headers);
+    $headers = array_map(
+        static fn ($value): string => trim((string) $value),
+        str_getcsv(rtrim($firstLine, "\r\n"), $delimiter, '"', '\\'),
+    );
     if ($headers !== EXPECTED_HEADERS) {
-        throw new RuntimeException('CSV başlıkları şablonla birebir eşleşmiyor.');
+        throw new RuntimeException('CSV başlıkları beklenen şablonla eşleşmiyor.');
+    }
+
+    $rows = [];
+    $validationErrors = [];
+    $line = 1;
+    while (($values = fgetcsv($handle, 0, $delimiter, '"', '\\')) !== false) {
+        $line++;
+        if ($values === [null] || (count($values) === 1 && trim((string) $values[0]) === '')) {
+            continue;
+        }
+        try {
+            if (count($values) !== count($headers)) {
+                throw new InvalidArgumentException('Kolon sayısı başlıkla eşleşmiyor.');
+            }
+            $row = validatedRow(array_combine($headers, $values), $expectedYear);
+            if (isset($rows[$row['program_code']])) {
+                throw new InvalidArgumentException('CSV içinde duplicate program_code.');
+            }
+            $rows[$row['program_code']] = $row;
+        } catch (InvalidArgumentException $exception) {
+            if (count($validationErrors) < 100) {
+                $validationErrors[] = ['line' => $line, 'reason' => $exception->getMessage()];
+            }
+        }
+    }
+    fclose($handle);
+    if ($validationErrors !== []) {
+        throw new RuntimeException('CSV validation başarısız: ' . json_encode($validationErrors, JSON_UNESCAPED_UNICODE));
     }
 
     $root = dirname(__DIR__);
     Dotenv::createImmutable($root)->safeLoad();
-    $pdo = Connection::make(new Env($_ENV));
-    $exists = $pdo->prepare(
-        'SELECT 1 FROM universities '
-        . 'WHERE program_code = :program_code AND year = :year LIMIT 1'
-    );
-    $upsert = $pdo->prepare(<<<SQL
+    $env = new Env($_ENV);
+    if ($env->appEnv() !== 'local'
+        || !in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)
+        || $env->instanceConnectionName() !== null
+        || $env->dbName() !== 'dersrotasi') {
+        throw new RuntimeException('Import yalnız local dersrotasi veritabanında çalışabilir.');
+    }
+    $pdo = Connection::make($env);
+    $before = protectedSnapshot($pdo);
+    $counts = [
+        'csv_rows' => count($rows),
+        'inserted' => 0,
+        'skipped_identical' => 0,
+        'conflicts' => 0,
+        'validation_errors' => 0,
+    ];
+    $conflicts = [];
+    $find = $pdo->prepare('SELECT * FROM universities WHERE year = :year AND program_code = :program_code LIMIT 1');
+    $insert = $pdo->prepare(<<<'SQL'
 INSERT INTO universities (
-  program_code, university_name, faculty_name, department_name, city,
-  university_type, score_type, education_type, education_language,
-  scholarship_type, base_score, base_rank, quota, placed_count,
-  duration_years, year, source_name, source_url
+  program_code, identity_hash, university_name, faculty_name, department_name, city,
+  university_type, score_type, education_type, education_language, scholarship_type,
+  base_score, base_rank, rank_source_name, rank_source_url, rank_updated_at,
+  quota, placed_count, duration_years, year, source_year, source_name, source_url
 ) VALUES (
-  :program_code, :university_name, :faculty_name, :department_name, :city,
-  :university_type, :score_type, :education_type, :education_language,
-  :scholarship_type, :base_score, :base_rank, :quota, :placed_count,
-  :duration_years, :year, :source_name, :source_url
+  :program_code, :identity_hash, :university_name, :faculty_name, :department_name, :city,
+  :university_type, :score_type, :education_type, :education_language, :scholarship_type,
+  :base_score, :base_rank, :rank_source_name, :rank_source_url, :rank_updated_at,
+  :quota, :placed_count, :duration_years, :year, :source_year, :source_name, :source_url
 )
-ON DUPLICATE KEY UPDATE
-  university_name = VALUES(university_name), faculty_name = VALUES(faculty_name),
-  department_name = VALUES(department_name), city = VALUES(city),
-  university_type = VALUES(university_type), score_type = VALUES(score_type),
-  education_type = VALUES(education_type), education_language = VALUES(education_language),
-  scholarship_type = VALUES(scholarship_type), base_score = VALUES(base_score),
-  base_rank = VALUES(base_rank), quota = VALUES(quota), placed_count = VALUES(placed_count),
-  duration_years = VALUES(duration_years), year = VALUES(year),
-  source_name = VALUES(source_name), source_url = VALUES(source_url),
-  updated_at = CURRENT_TIMESTAMP
 SQL);
 
-    $counts = ['total' => 0, 'inserted' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => 0];
-    $lineNumber = 1;
-    $pdo->beginTransaction();
-
-    while (($values = fgetcsv($handle, 0, $delimiter, '"', '\\')) !== false) {
-        $lineNumber++;
-        if ($values === [null] || (count($values) === 1 && trim((string) $values[0]) === '')) {
-            $counts['skipped']++;
+    if ($mode === 'dry-run') {
+        $pdo->exec('SET SESSION TRANSACTION READ ONLY');
+        $pdo->exec('START TRANSACTION READ ONLY');
+    } else {
+        $pdo->beginTransaction();
+    }
+    $rankUpdatedAt = gmdate('Y-m-d H:i:s');
+    foreach ($rows as $row) {
+        $find->execute(['year' => $row['year'], 'program_code' => $row['program_code']]);
+        $existing = $find->fetch();
+        if ($existing !== false) {
+            if (rowsEquivalent($row, $existing)) {
+                $counts['skipped_identical']++;
+                continue;
+            }
+            $counts['conflicts']++;
+            if (count($conflicts) < 100) {
+                $conflicts[] = $row['program_code'];
+            }
             continue;
         }
-
-        $counts['total']++;
-        try {
-            if (count($values) !== count($headers)) {
-                throw new InvalidArgumentException('Kolon sayısı başlık satırıyla eşleşmiyor.');
-            }
-            $row = validatedRow(array_combine($headers, $values));
-            $exists->execute([
-                'program_code' => $row['program_code'],
-                'year' => $row['year'],
+        $counts['inserted']++;
+        if ($mode === 'apply') {
+            $insert->execute([
+                ...$row,
+                'rank_updated_at' => $row['base_rank'] === null ? null : $rankUpdatedAt,
             ]);
-            $isUpdate = (bool) $exists->fetchColumn();
-            $upsert->execute($row);
-            $counts[$isUpdate ? 'updated' : 'inserted']++;
-        } catch (InvalidArgumentException $exception) {
-            $counts['errors']++;
-            fwrite(STDERR, "Satır {$lineNumber}: {$exception->getMessage()}\n");
         }
     }
+    if ($counts['conflicts'] > 0) {
+        throw new RuntimeException('Mevcut 2026 satırlarıyla içerik conflict bulundu; işlem geri alındı.');
+    }
+    if ($mode === 'apply') {
+        $pdo->commit();
+    } else {
+        $pdo->rollBack();
+    }
+    $after = protectedSnapshot($pdo);
+    if ($before !== $after) {
+        throw new RuntimeException('2023/2024/2025 integrity snapshot değişti.');
+    }
 
-    $pdo->commit();
-    fclose($handle);
-    $elapsed = number_format(microtime(true) - $startedAt, 2, '.', '');
-    echo "Toplam satır: {$counts['total']}\n";
-    echo "Eklenen kayıt: {$counts['inserted']}\n";
-    echo "Güncellenen kayıt: {$counts['updated']}\n";
-    echo "Atlanan kayıt: {$counts['skipped']}\n";
-    echo "Hatalı kayıt: {$counts['errors']}\n";
-    echo "İşlem süresi: {$elapsed} saniye\n";
+    $coverage = $pdo->query(<<<'SQL'
+SELECT COUNT(*) total_rows, COUNT(DISTINCT program_code) unique_program_codes,
+       SUM(base_score IS NOT NULL AND base_score > 0) base_score_filled,
+       SUM(base_rank IS NOT NULL AND base_rank > 0) base_rank_filled,
+       SUM(quota IS NOT NULL) quota_filled,
+       SUM(placed_count IS NOT NULL) placed_count_filled,
+       SUM(base_score IS NULL OR base_score <= 0) base_score_missing,
+       SUM(base_rank IS NULL OR base_rank <= 0) base_rank_missing
+FROM universities WHERE year = 2026
+SQL)->fetch();
+    $report = [
+        'generated_at' => gmdate(DATE_ATOM),
+        'mode' => $mode,
+        'year' => $expectedYear,
+        'counts' => $counts,
+        'conflict_samples' => $conflicts,
+        'protected_before' => $before,
+        'protected_after' => $after,
+        'protected_unchanged' => true,
+        'database_coverage' => $coverage,
+    ];
+    $reportDirectory = $root . '/storage/reports';
+    $reportPath = $reportDirectory . '/university_import_' . str_replace('-', '_', $mode)
+        . '_' . date('Ymd_His') . '.json';
+    file_put_contents(
+        $reportPath,
+        json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+        LOCK_EX,
+    );
+    echo json_encode([...$report, 'report' => $reportPath], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;
 } catch (Throwable $exception) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    fclose($handle);
-    fwrite(STDERR, 'İçe aktarma tamamlanamadı: ' . $exception->getMessage() . PHP_EOL);
+    if (is_resource($handle)) {
+        fclose($handle);
+    }
+    fwrite(STDERR, 'Üniversite importu tamamlanamadı: ' . $exception->getMessage() . PHP_EOL);
     exit(1);
 }

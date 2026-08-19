@@ -2224,6 +2224,14 @@ main {
   width: min(calc(100% - 32px), 1520px);
 }
 
+.university-data-note {
+  max-width: 960px;
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 .university-layout {
   display: grid;
   gap: 1rem;
@@ -2350,7 +2358,7 @@ main {
 
 .university-results-table {
   width: 100%;
-  min-width: 1390px;
+  min-width: 1540px;
   border-collapse: separate;
   border-spacing: 0;
   color: var(--ink);
@@ -2405,7 +2413,7 @@ main {
 .university-results-table th:nth-child(3) { width: 215px; }
 .university-results-table th:nth-child(4) { width: 64px; }
 .university-results-table th:nth-child(5) { width: 125px; }
-.university-results-table th:nth-child(n+6):nth-child(-n+12) { width: 76px; text-align: right; }
+.university-results-table th:nth-child(n+6):nth-child(-n+14) { width: 76px; text-align: right; }
 .university-results-table th:last-child { width: 76px; }
 
 .university-name-cell strong,
@@ -2801,7 +2809,7 @@ main {
     overflow: hidden;
     border: 1px solid #e2e9f3;
     border-radius: 10px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .university-mobile-history > div {

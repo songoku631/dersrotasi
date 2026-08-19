@@ -3,7 +3,13 @@
 declare(strict_types=1);
 
 use DersRotasi\Config\Env;
+use DersRotasi\Database\Connection;
+use DersRotasi\Historical\HistoricalProgramMatcher;
+use DersRotasi\Osym\OsymHistoricalValueParser;
+use DersRotasi\Osym\OsymSpreadsheetParser;
+use DersRotasi\Yokatlas\CurrentUniversityMapper;
 use DersRotasi\Yokatlas\YokatlasClient;
+use DersRotasi\Yokatlas\YokatlasStorage;
 use Dotenv\Dotenv;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -16,17 +22,18 @@ const CSV_HEADERS = [
     'scholarship_type', 'base_score', 'base_rank', 'quota', 'placed_count',
     'duration_years', 'year', 'source_name', 'source_url',
 ];
+const CACHE_FIELDS = [
+    'yil', 'kilavuzKodu', 'universiteAdi', 'fymkAdi', 'birimAdi', 'birimGrupAdi',
+    'birimTuruAdi', 'ilAdi', 'uniIlAdi', 'fymkIlAdi', 'universiteTuru', 'puanTuru',
+    'ogrenimTuruAdi', 'ogrenimDiliAdi', 'bursOraniAdi', 'ogrenimSuresi',
+    'kontenjan', 'gkY', 'minPuan', 'basariSirasi', 'minPuan1', 'basariSirasi1',
+];
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "Bu araç yalnızca komut satırından çalıştırılabilir.\n");
     exit(1);
 }
-
-function fail(string $message): never
-{
-    fwrite(STDERR, $message . PHP_EOL);
-    exit(1);
-}
+ini_set('memory_limit', '512M');
 
 function optionValue(string $argument, string $name): ?string
 {
@@ -34,7 +41,7 @@ function optionValue(string $argument, string $name): ?string
     return str_starts_with($argument, $prefix) ? substr($argument, strlen($prefix)) : null;
 }
 
-function positiveOption(?string $value, string $name, int $minimum, int $maximum): int
+function integerOption(?string $value, string $name, int $minimum, int $maximum): int
 {
     if ($value === null || filter_var($value, FILTER_VALIDATE_INT) === false) {
         throw new RuntimeException("--{$name} geçerli bir tam sayı olmalıdır.");
@@ -46,203 +53,64 @@ function positiveOption(?string $value, string $name, int $minimum, int $maximum
     return $number;
 }
 
-function requiredText(array $item, string $field, ?string $fallback = null): string
+/** @return array<string, mixed> */
+function sanitizedItem(array $item): array
 {
-    $value = trim((string) ($item[$field] ?? ''));
-    if ($value === '' && $fallback !== null) {
-        $value = trim((string) ($item[$fallback] ?? ''));
-    }
-    if ($value === '') {
-        throw new InvalidArgumentException("{$field} alanı boş.");
-    }
-    return $value;
+    return array_intersect_key($item, array_flip(CACHE_FIELDS));
 }
 
-function upper(string $value): string
+/** @return list<string> */
+function csvValues(array $row): array
 {
-    return mb_strtoupper(trim($value), 'UTF-8');
+    return array_map(
+        static fn (string $field): string => $row[$field] === null ? '' : (string) $row[$field],
+        CSV_HEADERS,
+    );
 }
 
-function universityType(mixed $value): string
+/** @return array<string, int|string> */
+function osymSource(int $table): array
 {
-    $value = upper((string) $value);
-    return match (true) {
-        $value === 'DEVLET' => 'devlet',
-        $value === 'VAKIF' => 'vakif',
-        str_contains($value, 'KKTC') => 'kktc',
-        str_contains($value, 'YABANCI'), str_contains($value, 'YURT') => 'yabanci',
-        default => throw new InvalidArgumentException("Bilinmeyen üniversite türü: {$value}"),
-    };
-}
-
-function scoreType(mixed $value): string
-{
-    return match (upper((string) $value)) {
-        'SAY' => 'say',
-        'EA' => 'ea',
-        'SÖZ' => 'soz',
-        'DİL' => 'dil',
-        'TYT' => 'tyt',
-        default => throw new InvalidArgumentException('Bilinmeyen puan türü.'),
-    };
-}
-
-function educationType(mixed $value, array &$fallbacks): string
-{
-    $raw = trim((string) $value);
-    $value = upper($raw);
-    if (str_contains($value, 'İKİNCİ')) {
-        return 'ikinci_ogretim';
-    }
-    if (str_contains($value, 'UZAKTAN')) {
-        return 'uzaktan';
-    }
-    if (str_contains($value, 'AÇIK')) {
-        return 'acikogretim';
-    }
-    if (str_contains($value, 'ÖRGÜN')) {
-        return 'orgun';
-    }
-    $fallbacks['education_type'][$raw !== '' ? $raw : '<empty>'] = true;
-    return 'diger';
-}
-
-function scholarshipType(mixed $value, string $universityType, array &$fallbacks): string
-{
-    $raw = trim((string) $value);
-    $value = upper($raw);
-    if ($value === '') {
-        return $universityType === 'devlet' ? 'ucretsiz' : 'diger';
-    }
-    if (str_contains($value, '%50') || str_contains($value, '50 İNDİR')) {
-        return 'yuzde_50';
-    }
-    if (str_contains($value, '%25') || str_contains($value, '25 İNDİR')) {
-        return 'yuzde_25';
-    }
-    if (str_contains($value, 'BURSLU')) {
-        return 'burslu';
-    }
-    if (str_contains($value, 'ÜCRETSİZ')) {
-        return 'ucretsiz';
-    }
-    // Unicode default uppercasing turns the final "i" into ASCII "I" rather
-    // than locale-specific "İ"; matching the stable stem handles both forms.
-    if (str_contains($value, 'ÜCRET')) {
-        return 'ucretli';
-    }
-    $fallbacks['scholarship_type'][$raw] = true;
-    return 'diger';
-}
-
-function nullableInteger(mixed $value): string
-{
-    if ($value === null) {
-        return '';
-    }
-    if (is_int($value)) {
-        return $value >= 0 ? (string) $value : '';
-    }
-    if (is_float($value) && floor($value) === $value) {
-        return $value >= 0 ? (string) (int) $value : '';
-    }
-    $text = trim((string) $value);
-    if ($text === '' || in_array(mb_strtolower($text, 'UTF-8'), ['dolmadı', '-', '—', '---'], true)) {
-        return '';
-    }
-    $normalized = str_replace(["\u{00A0}", ' ', '.', ','], '', $text);
-    return ctype_digit($normalized) ? $normalized : '';
-}
-
-function nullableDecimal(mixed $value): string
-{
-    if ($value === null || trim((string) $value) === '') {
-        return '';
-    }
-    if (is_int($value) || is_float($value)) {
-        return $value >= 0 ? number_format((float) $value, 5, '.', '') : '';
-    }
-    $text = trim((string) $value);
-    if (in_array(mb_strtolower($text, 'UTF-8'), ['dolmadı', '-', '—', '---'], true)) {
-        return '';
-    }
-    $text = str_replace(["\u{00A0}", ' '], '', $text);
-    if (str_contains($text, ',') && str_contains($text, '.')) {
-        $text = strrpos($text, ',') > strrpos($text, '.')
-            ? str_replace(',', '.', str_replace('.', '', $text))
-            : str_replace(',', '', $text);
-    } elseif (str_contains($text, ',')) {
-        $text = str_replace(',', '.', $text);
-    }
-    return is_numeric($text) && (float) $text >= 0
-        ? number_format((float) $text, 5, '.', '')
-        : '';
-}
-
-function csvRow(array $item, int $year, array &$fallbacks): array
-{
-    $programCode = trim((string) ($item['kilavuzKodu'] ?? ''));
-    if (preg_match('/^[0-9]{9}$/', $programCode) !== 1) {
-        throw new InvalidArgumentException('Program kodu 9 rakam değil.');
-    }
-    if ((int) ($item['yil'] ?? 0) !== $year) {
-        throw new InvalidArgumentException('Kayıt yılı istenen yılla eşleşmiyor.');
-    }
-    // `yil` is the active guide year. The unsuffixed minPuan/basariSirasi
-    // fields describe the preceding placement year.
-    $placementYear = $year - 1;
-
-    $universityType = universityType($item['universiteTuru'] ?? null);
-    $scoreType = scoreType($item['puanTuru'] ?? null);
-    $city = '';
-    foreach (['ilAdi', 'uniIlAdi', 'fymkIlAdi'] as $cityField) {
-        $city = trim((string) ($item[$cityField] ?? ''));
-        if ($city !== '') {
-            break;
-        }
-    }
-    if ($city === '' && $universityType === 'yabanci') {
-        $city = 'YURTDIŞI';
-    }
-    if ($city === '') {
-        throw new InvalidArgumentException('Program şehri resmî yanıtta bulunamadı.');
-    }
-    $duration = nullableInteger($item['ogrenimSuresi'] ?? null);
-    $isAssociate = upper((string) ($item['birimTuruAdi'] ?? '')) === 'ONLISANS'
-        || $scoreType === 'tyt'
-        || $duration === '2';
-    $sourceUrl = 'https://yokatlas.yok.gov.tr/'
-        . ($isAssociate ? 'onlisans.php' : 'lisans.php')
-        . '?y=' . $programCode;
-
+    $filename = "2026_result_table{$table}.xlsx";
+    $url = $table === 3
+        ? 'https://cdn.osym.gov.tr/en-kucuk-ve-en-buyuk-puanlar-tablo-3-0wptq7-18092428.xlsx'
+        : 'https://cdn.osym.gov.tr/en-kucuk-ve-en-buyuk-puanlar-tablo-4-rps0lq-18092428.xlsx';
     return [
-        $programCode,
-        requiredText($item, 'universiteAdi'),
-        trim((string) ($item['fymkAdi'] ?? '')),
-        requiredText($item, 'birimAdi', 'birimGrupAdi'),
-        $city,
-        $universityType,
-        $scoreType,
-        educationType($item['ogrenimTuruAdi'] ?? null, $fallbacks),
-        trim((string) ($item['ogrenimDiliAdi'] ?? '')),
-        scholarshipType($item['bursOraniAdi'] ?? null, $universityType, $fallbacks),
-        nullableDecimal($item['minPuan'] ?? null),
-        nullableInteger($item['basariSirasi'] ?? null),
-        nullableInteger($item['kontenjan'] ?? null),
-        '',
-        $duration,
-        (string) $placementYear,
-        'YÖK Atlas ' . $placementYear,
-        $sourceUrl,
+        'historical_year' => 2026,
+        'kind' => 'result',
+        'table' => $table,
+        'filename' => $filename,
+        'url' => $url,
+        'label' => "ÖSYM 2026 YKS Yerleştirme Sonuçları Tablo-{$table}",
     ];
+}
+
+function sameNullableNumber(mixed $left, mixed $right, float $tolerance = 0.0): bool
+{
+    if ($left === null || $right === null) {
+        return $left === null && $right === null;
+    }
+    return abs((float) $left - (float) $right) <= $tolerance;
+}
+
+function comparableText(mixed $value): string
+{
+    $text = mb_strtolower(trim((string) $value), 'UTF-8');
+    $text = strtr($text, [
+        'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'i̇' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+        'â' => 'a', 'î' => 'i', 'û' => 'u', 'é' => 'e', '&' => ' ve ',
+    ]);
+    $text = preg_replace('/[^a-z0-9]+/u', ' ', $text) ?? $text;
+    return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
 }
 
 $options = [
     'year' => 2026,
-    'limit' => 100,
+    'limit' => MAX_PROGRAMS,
     'delay_ms' => 1000,
     'write' => false,
-    'output' => null,
+    'refresh' => false,
+    'output' => 'storage/imports/universities_2026.csv',
 ];
 
 try {
@@ -251,12 +119,14 @@ try {
             $options['write'] = false;
         } elseif ($argument === '--write') {
             $options['write'] = true;
+        } elseif ($argument === '--refresh') {
+            $options['refresh'] = true;
         } elseif (($value = optionValue($argument, 'year')) !== null) {
-            $options['year'] = positiveOption($value, 'year', 2025, 2100);
+            $options['year'] = integerOption($value, 'year', 2026, 2026);
         } elseif (($value = optionValue($argument, 'limit')) !== null) {
-            $options['limit'] = positiveOption($value, 'limit', 1, MAX_PROGRAMS);
+            $options['limit'] = integerOption($value, 'limit', 1, MAX_PROGRAMS);
         } elseif (($value = optionValue($argument, 'delay-ms')) !== null) {
-            $options['delay_ms'] = positiveOption($value, 'delay-ms', 1000, 60000);
+            $options['delay_ms'] = integerOption($value, 'delay-ms', 1000, 60000);
         } elseif (($value = optionValue($argument, 'output')) !== null) {
             if (preg_match('#^storage[\\/]imports[\\/][A-Za-z0-9_.-]+\.csv$#', $value) !== 1) {
                 throw new RuntimeException('--output storage/imports altında bir CSV olmalıdır.');
@@ -267,135 +137,334 @@ try {
         }
     }
 
-    $options['output'] ??= 'storage/imports/universities_' . ($options['year'] - 1) . '.csv';
-
     $root = dirname(__DIR__);
     Dotenv::createImmutable($root)->safeLoad();
     $env = new Env($_ENV);
-    $client = new YokatlasClient($env->yokatlasUserAgent(), $options['delay_ms'], $env->sslCaBundle());
-    $robots = $client->checkRobots();
-
-    $outputPath = $root . '/' . $options['output'];
-    $temporaryPath = $outputPath . '.part';
-    $handle = null;
-    if ($options['write']) {
-        if (is_file($outputPath) || is_file($temporaryPath)) {
-            throw new RuntimeException('Çıktı veya .part dosyası zaten var; mevcut dosyanın üzerine yazılmadı.');
-        }
-        $handle = fopen($temporaryPath, 'xb');
-        if ($handle === false || fputcsv($handle, CSV_HEADERS) === false) {
-            throw new RuntimeException('Geçici CSV çıktısı oluşturulamadı.');
-        }
+    if ($env->appEnv() !== 'local'
+        || !in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)
+        || $env->instanceConnectionName() !== null
+        || $env->dbName() !== 'dersrotasi') {
+        throw new RuntimeException('2026 exportu yalnız local dersrotasi veritabanıyla çalışabilir.');
     }
 
-    $processed = 0;
+    $storage = new YokatlasStorage($root);
+    $client = new YokatlasClient(
+        $env->yokatlasUserAgent(),
+        $options['delay_ms'],
+        $env->sslCaBundle(),
+    );
+    $mapper = new CurrentUniversityMapper();
+    $robots = $client->checkRobots();
+    $pdo = Connection::make($env);
+    $pdo->exec('SET SESSION TRANSACTION READ ONLY');
+    $pdo->exec('START TRANSACTION READ ONLY');
+
+    $parser = new OsymSpreadsheetParser(new OsymHistoricalValueParser());
+    $osymTables = [];
+    foreach ([3, 4] as $table) {
+        $source = osymSource($table);
+        $osymTables[] = $parser->parse(
+            $root . '/storage/osym/cache/' . $source['filename'],
+            $source,
+        );
+    }
+    $osym = $parser->mergeTables($osymTables);
+
+    $rowsByCode = [];
+    $validationErrors = [];
+    $duplicates = [];
+    $counts = [
+        'source_programs' => 0,
+        'parsed_programs' => 0,
+        'unique_program_codes' => 0,
+        'base_score_filled' => 0,
+        'base_rank_filled' => 0,
+        'quota_filled' => 0,
+        'placed_count_filled' => 0,
+        'missing_program_code' => 0,
+        'duplicate_program_code' => 0,
+        'parse_errors' => 0,
+        'source_errors' => 0,
+        'validation_errors' => 0,
+        'pages_requested' => 0,
+        'pages_from_cache' => 0,
+        'osym_score_backfilled' => 0,
+        'osym_score_type_backfilled' => 0,
+    ];
     $page = 0;
     $officialTotal = null;
     $officialPages = null;
-    $errors = [];
-    $unsupported = [];
-    $unsupportedCount = 0;
-    $fallbacks = ['education_type' => [], 'scholarship_type' => []];
-    $programCodes = [];
-    $universityNames = [];
-    while ($processed < $options['limit']) {
-        $response = $client->fetchPage($options['year'], $page, PAGE_SIZE);
-        if ($response['status'] !== 200) {
-            throw new RuntimeException("YÖK Atlas sayfa {$page} HTTP {$response['status']} döndürdü.");
+    $fetchedAt = gmdate('Y-m-d H:i:s');
+    while ($counts['source_programs'] < $options['limit']) {
+        $pageData = $options['refresh']
+            ? null
+            : $storage->readPlacementPage($options['year'], $page, PAGE_SIZE);
+        if ($pageData === null) {
+            $response = $client->fetchPage($options['year'], $page, PAGE_SIZE);
+            $counts['pages_requested']++;
+            if ($response['status'] !== 200) {
+                $counts['source_errors']++;
+                throw new RuntimeException("YÖK Atlas sayfa {$page} HTTP {$response['status']} döndürdü.");
+            }
+            $decoded = json_decode($response['body'], true, 512, JSON_THROW_ON_ERROR);
+            $pageData = [
+                'number' => $decoded['number'] ?? null,
+                'size' => $decoded['size'] ?? null,
+                'totalElements' => $decoded['totalElements'] ?? null,
+                'totalPages' => $decoded['totalPages'] ?? null,
+                'last' => $decoded['last'] ?? null,
+                'fetched_at' => gmdate('Y-m-d H:i:s'),
+                'content' => array_map('sanitizedItem', $decoded['content'] ?? []),
+            ];
+            $storage->writePlacementPage($options['year'], $page, PAGE_SIZE, $pageData);
+        } else {
+            $counts['pages_from_cache']++;
         }
-        $decoded = json_decode($response['body'], true, 512, JSON_THROW_ON_ERROR);
-        if (!is_array($decoded['content'] ?? null)
-            || (int) ($decoded['number'] ?? -1) !== $page
-            || (int) ($decoded['size'] ?? 0) !== PAGE_SIZE
-            || (int) ($decoded['totalElements'] ?? 0) < 1
-            || (int) ($decoded['totalPages'] ?? 0) < 1
-            || count($decoded['content']) > PAGE_SIZE) {
+
+        if ((int) ($pageData['number'] ?? -1) !== $page
+            || (int) ($pageData['size'] ?? 0) !== PAGE_SIZE
+            || (int) ($pageData['totalElements'] ?? 0) < 1
+            || (int) ($pageData['totalPages'] ?? 0) < 1
+            || !is_array($pageData['content'] ?? null)
+            || count($pageData['content']) > PAGE_SIZE) {
             throw new RuntimeException("YÖK Atlas sayfa {$page} metadata doğrulamasından geçmedi.");
         }
-        $officialTotal ??= (int) $decoded['totalElements'];
-        $officialPages ??= (int) $decoded['totalPages'];
-        if ($officialTotal !== (int) $decoded['totalElements']
-            || $officialPages !== (int) $decoded['totalPages']) {
+        $officialTotal ??= (int) $pageData['totalElements'];
+        $officialPages ??= (int) $pageData['totalPages'];
+        if ($officialTotal !== (int) $pageData['totalElements']
+            || $officialPages !== (int) $pageData['totalPages']) {
             throw new RuntimeException('YÖK Atlas sayfalama toplamı işlem sırasında değişti.');
         }
+        $fetchedAt = (string) ($pageData['fetched_at'] ?? $fetchedAt);
 
-        foreach ($decoded['content'] as $item) {
-            if ($processed >= $options['limit'] || $processed >= $officialTotal) {
+        foreach ($pageData['content'] as $item) {
+            if ($counts['source_programs'] >= $options['limit']) {
                 break;
             }
+            $counts['source_programs']++;
+            $rawCode = trim((string) ($item['kilavuzKodu'] ?? ''));
+            if ($rawCode === '') {
+                $counts['missing_program_code']++;
+            }
             try {
-                if (!is_array($item)) {
-                    throw new InvalidArgumentException('Program kaydı nesne değil.');
+                $officialOsym = $osym['rows'][$rawCode] ?? null;
+                if (trim((string) ($item['puanTuru'] ?? '')) === ''
+                    && trim((string) ($officialOsym['score_type'] ?? '')) !== '') {
+                    $item['puanTuru'] = $officialOsym['score_type'];
+                    $counts['osym_score_type_backfilled']++;
                 }
-                if (trim((string) ($item['puanTuru'] ?? '')) === '') {
-                    $unsupportedCount++;
-                    if (count($unsupported) < 20) {
-                        $unsupported[] = [
-                            'program_code' => trim((string) ($item['kilavuzKodu'] ?? '')),
-                            'reason' => 'Resmî puan türü boş.',
-                        ];
+                $row = $mapper->map($item, $options['year'], $fetchedAt);
+                if ($row['base_score'] === null && ($officialOsym['score'] ?? null) !== null) {
+                    $row['base_score'] = $officialOsym['score'];
+                    $row['source_name'] = 'YÖK Atlas 2026 + ÖSYM 2026 yerleştirme tabloları';
+                    $counts['osym_score_backfilled']++;
+                }
+                $code = (string) $row['program_code'];
+                if (isset($rowsByCode[$code])) {
+                    $counts['duplicate_program_code']++;
+                    if (count($duplicates) < 50) {
+                        $duplicates[] = $code;
                     }
-                    $processed++;
                     continue;
                 }
-                $row = csvRow($item, $options['year'], $fallbacks);
-                if (isset($programCodes[$row[0]])) {
-                    throw new InvalidArgumentException('Tekrarlanan program kodu: ' . $row[0]);
-                }
-                $programCodes[$row[0]] = true;
-                $universityNames[$row[1]] = true;
-                if ($handle !== null && fputcsv($handle, $row) === false) {
-                    throw new RuntimeException('CSV satırı yazılamadı.');
+                $rowsByCode[$code] = $row;
+                $counts['parsed_programs']++;
+                foreach ([
+                    'base_score' => 'base_score_filled',
+                    'base_rank' => 'base_rank_filled',
+                    'quota' => 'quota_filled',
+                    'placed_count' => 'placed_count_filled',
+                ] as $field => $counter) {
+                    if ($row[$field] !== null) {
+                        $counts[$counter]++;
+                    }
                 }
             } catch (InvalidArgumentException $exception) {
-                if (count($errors) < 20) {
-                    $errors[] = ['page' => $page, 'reason' => $exception->getMessage()];
+                $counts['validation_errors']++;
+                if (count($validationErrors) < 100) {
+                    $validationErrors[] = [
+                        'program_code' => $rawCode,
+                        'reason' => $exception->getMessage(),
+                    ];
                 }
             }
-            $processed++;
         }
-
         $page++;
-        if ($processed >= $officialTotal || !empty($decoded['last'])) {
+        if ($counts['source_programs'] >= $officialTotal || !empty($pageData['last'])) {
             break;
         }
     }
+    $counts['unique_program_codes'] = count($rowsByCode);
 
-    if (is_resource($handle)) {
-        fclose($handle);
-        $handle = null;
+    $existing2025 = [];
+    foreach ($pdo->query(<<<'SQL'
+SELECT program_code, university_name, faculty_name, department_name, city,
+       university_type, score_type, education_type, education_language,
+       scholarship_type, base_score, base_rank, quota, placed_count, duration_years
+FROM universities WHERE year = 2025 AND program_code IS NOT NULL
+SQL)->fetchAll() as $row) {
+        $existing2025[(string) $row['program_code']] = $row;
     }
-    $expected = min($options['limit'], (int) $officialTotal);
-    if ($errors !== [] || count($programCodes) !== $expected - $unsupportedCount) {
-        throw new RuntimeException('Export doğrulaması başarısız: ' . json_encode([
-            'expected' => $expected,
-            'valid' => count($programCodes),
-            'unsupported_count' => $unsupportedCount,
-            'unsupported' => $unsupported,
-            'errors' => $errors,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
-    if ($options['write'] && !rename($temporaryPath, $outputPath)) {
-        throw new RuntimeException('Doğrulanan geçici CSV son dosya adına taşınamadı.');
+    $continuing = array_intersect_key($rowsByCode, $existing2025);
+    $newRows = array_diff_key($rowsByCode, $existing2025);
+    $missingFrom2026 = array_diff_key($existing2025, $rowsByCode);
+    $fieldChanges = array_fill_keys([
+        'university_name', 'faculty_name', 'department_name', 'city', 'score_type',
+        'education_type', 'education_language', 'scholarship_type',
+    ], 0);
+    foreach ($continuing as $code => $row) {
+        foreach (array_keys($fieldChanges) as $field) {
+            if (comparableText($row[$field]) !== comparableText($existing2025[$code][$field])) {
+                $fieldChanges[$field]++;
+            }
+        }
     }
 
-    echo json_encode([
+    $ranked2025 = array_values(array_filter(
+        $existing2025,
+        static fn (array $row): bool => $row['base_rank'] !== null && (int) $row['base_rank'] > 0,
+    ));
+    $mappingAnalysis = (new HistoricalProgramMatcher())->analyze(
+        array_values($newRows),
+        $ranked2025,
+        2025,
+    );
+
+    $collectedFullDataset = $officialTotal !== null
+        && $counts['source_programs'] === $officialTotal;
+    $osymConflicts = [];
+    $osymCounts = [
+        'official_rows' => count($osym['rows']),
+        'matched_program_codes' => 0,
+        'yokatlas_without_osym' => 0,
+        'osym_without_yokatlas' => $collectedFullDataset
+            ? count(array_diff_key($osym['rows'], $rowsByCode))
+            : 0,
+        'score_conflicts' => 0,
+        'quota_conflicts' => 0,
+        'placed_count_conflicts' => 0,
+        'duplicate_program_codes' => count($osym['duplicates']),
+    ];
+    foreach ($rowsByCode as $code => $row) {
+        $official = $osym['rows'][$code] ?? null;
+        if ($official === null) {
+            $osymCounts['yokatlas_without_osym']++;
+            continue;
+        }
+        $osymCounts['matched_program_codes']++;
+        $differences = [];
+        if (!sameNullableNumber($row['base_score'], $official['score'], 0.00001)) {
+            $osymCounts['score_conflicts']++;
+            $differences[] = 'base_score';
+        }
+        if (!sameNullableNumber($row['quota'], $official['quota'])) {
+            $osymCounts['quota_conflicts']++;
+            $differences[] = 'quota';
+        }
+        if (!sameNullableNumber($row['placed_count'], $official['placed_count'])) {
+            $osymCounts['placed_count_conflicts']++;
+            $differences[] = 'placed_count';
+        }
+        if ($differences !== [] && count($osymConflicts) < 100) {
+            $osymConflicts[] = ['program_code' => $code, 'fields' => $differences];
+        }
+    }
+
+    $fullRun = $collectedFullDataset;
+    $criticalErrors = [];
+    foreach ([
+        'Eksik/tanımlanamayan program kaydı var.' => $counts['validation_errors'],
+        'Duplicate YÖK Atlas program kodu var.' => $counts['duplicate_program_code'],
+        'YÖK Atlas ile ÖSYM program kodları tam örtüşmüyor.'
+            => $osymCounts['yokatlas_without_osym'] + $osymCounts['osym_without_yokatlas'],
+        'YÖK Atlas ile ÖSYM puan/kontenjan/yerleşen alanları çelişiyor.'
+            => $osymCounts['score_conflicts'] + $osymCounts['quota_conflicts']
+                + $osymCounts['placed_count_conflicts'],
+        'ÖSYM dosyalarında duplicate program kodu var.' => $osymCounts['duplicate_program_codes'],
+    ] as $message => $value) {
+        if ($value > 0) {
+            $criticalErrors[] = $message;
+        }
+    }
+    if (!$fullRun && $options['limit'] >= (int) $officialTotal) {
+        $criticalErrors[] = 'Tam veri seti tamamlanamadı.';
+    }
+
+    $report = [
+        'generated_at' => gmdate(DATE_ATOM),
         'mode' => $options['write'] ? 'write' : 'dry-run',
-        'guide_year' => $options['year'],
-        'placement_year' => $options['year'] - 1,
-        'robots' => $robots,
-        'official_total' => $officialTotal,
-        'processed_programs' => count($programCodes),
-        'skipped_unsupported' => $unsupportedCount,
-        'unsupported' => $unsupported,
-        'distinct_universities' => count($universityNames),
-        'pages_requested' => $page,
-        'fallbacks' => array_map('array_keys', $fallbacks),
-        'output' => $options['write'] ? $options['output'] : null,
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;
-} catch (Throwable $exception) {
-    if (isset($handle) && is_resource($handle)) {
-        fclose($handle);
+        'year' => $options['year'],
+        'source' => [
+            'name' => 'YÖK Atlas 2026',
+            'endpoint' => 'https://yokatlas.yok.gov.tr/api/tercih-kilavuz/search',
+            'robots' => $robots,
+            'official_total' => $officialTotal,
+            'official_pages' => $officialPages,
+            'fetched_at' => $fetchedAt,
+        ],
+        'counts' => $counts,
+        'cross_year_2025' => [
+            'same_program_code' => count($continuing),
+            'new_2026_program_code' => count($newRows),
+            'missing_2025_program_code' => count($missingFrom2026),
+            'same_code_field_changes' => $fieldChanges,
+            'strict_code_change_candidates' => count($mappingAnalysis['matches']),
+            'ambiguous_code_change_candidates' => count($mappingAnalysis['ambiguous']),
+            'manual_review_code_change_candidates' => count($mappingAnalysis['manual_review']),
+            'unresolved_new_programs' => count($mappingAnalysis['unmatched']),
+            'candidate_samples' => array_slice($mappingAnalysis['matches'], 0, 100),
+        ],
+        'osym_crosscheck' => [
+            'counts' => $osymCounts,
+            'source_metadata' => $osym['metadata'],
+            'conflict_samples' => $osymConflicts,
+        ],
+        'validation_error_samples' => $validationErrors,
+        'duplicate_samples' => $duplicates,
+        'quality_passed' => $criticalErrors === [],
+        'critical_errors' => $criticalErrors,
+        'full_run' => $fullRun,
+        'output' => null,
+    ];
+
+    if ($criticalErrors === [] && $options['write']) {
+        $outputPath = $root . '/' . $options['output'];
+        if (is_file($outputPath)) {
+            throw new RuntimeException('CSV çıktısı zaten var; üzerine yazılmadı.');
+        }
+        $handle = fopen($outputPath, 'xb');
+        if ($handle === false) {
+            throw new RuntimeException('CSV çıktısı oluşturulamadı.');
+        }
+        try {
+            fputcsv($handle, CSV_HEADERS);
+            foreach ($rowsByCode as $row) {
+                fputcsv($handle, csvValues($row));
+            }
+        } finally {
+            fclose($handle);
+        }
+        $report['output'] = $options['output'];
     }
-    fail('YÖK Atlas üniversite exportu tamamlanamadı: ' . $exception->getMessage());
+
+    $reportPath = $storage->writePlacementReport($report);
+    $pdo->rollBack();
+    echo json_encode([
+        'mode' => $report['mode'],
+        'year' => $report['year'],
+        'quality_passed' => $report['quality_passed'],
+        'counts' => $counts,
+        'cross_year_2025' => $report['cross_year_2025'],
+        'osym_crosscheck' => $osymCounts,
+        'critical_errors' => $criticalErrors,
+        'output' => $report['output'],
+        'report' => $reportPath,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;
+    exit($criticalErrors === [] ? 0 : 2);
+} catch (Throwable $exception) {
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    fwrite(STDERR, 'YÖK Atlas 2026 exportu tamamlanamadı: ' . $exception->getMessage() . PHP_EOL);
+    exit(1);
 }

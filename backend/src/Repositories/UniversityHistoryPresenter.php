@@ -10,7 +10,7 @@ final class UniversityHistoryPresenter
     {
         $sourceYear = (int) ($row['source_year'] ?? $row['year'] ?? 0);
         $row['source_year'] = $sourceYear;
-        $row['year'] = $sourceYear === 2026 ? 2025 : $sourceYear;
+        $row['year'] = $sourceYear;
         $row['id'] = (int) $row['id'];
         $row['is_favorite'] = (int) ($row['is_favorite'] ?? 0);
         $row['favorite_id'] = $this->nullableInt($row['favorite_id'] ?? null);
@@ -23,7 +23,7 @@ final class UniversityHistoryPresenter
         $row['rankings'] = [];
         $row['scores'] = [];
         $row['quotas'] = [];
-        foreach ([2025, 2024, 2023] as $year) {
+        foreach ([2026, 2025, 2024, 2023] as $year) {
             $row['rankings'][(string) $year] = $this->nullableInt($row['ranking_' . $year] ?? null);
             $row['scores'][(string) $year] = $this->nullableFloat($row['score_' . $year] ?? null);
             $row['quotas'][(string) $year] = $this->nullableInt($row['quota_' . $year] ?? null);

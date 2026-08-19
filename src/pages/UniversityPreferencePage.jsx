@@ -356,7 +356,7 @@ function UniversityPreferencePage() {
           <div className="university-results-panel">
             <div className="university-results-summary" aria-live="polite">
               <strong>{status === 'ready' ? `${Number(pagination.total).toLocaleString('tr-TR')} program` : 'Programlar'}</strong>
-              <span>2025, 2024 ve 2023 yerleştirme verileri birlikte gösteriliyor.</span>
+              <span>2026, 2025, 2024 ve 2023 yerleştirme verileri birlikte gösteriliyor.</span>
             </div>
             {status === 'loading' ? <div className="loading-panel">Programlar yükleniyor...</div> : null}
             {status === 'error' ? <Button onClick={() => load()}>Yeniden Dene</Button> : null}
@@ -375,6 +375,7 @@ function UniversityPreferencePage() {
 
         {activeTab === 'favorites' ? (!isAuthenticated ? <div className="empty-state"><h2>Favorilerini görmek için giriş yap.</h2><Button to="/giris">Giriş Yap</Button></div> : favoriteState.status === 'loading' ? <div className="loading-panel">Favorilerin yükleniyor...</div> : favoriteState.status === 'error' ? <Button onClick={() => favoriteState.load()}>Yeniden Dene</Button> : renderPrograms(favoriteState.favorites)) : null}
         {activeTab === 'suggestions' ? (!isAuthenticated ? <div className="empty-state"><h2>Önerileri kişiselleştirmek için giriş yap.</h2><Button to="/giris">Giriş Yap</Button></div> : status === 'loading' ? <div className="loading-panel">Önerilerin hazırlanıyor...</div> : suggestions ? <div className="suggestion-groups"><div className="information-banner">{suggestions.disclaimer}</div>{[['zor', 'Zor Tercihler'], ['hedef', 'Hedef Tercihler'], ['daha_guvenli', 'Daha Güvenli Tercihler']].map(([key, title]) => <section key={key}><h2>{title}</h2>{renderPrograms(suggestions.groups[key] || [])}</section>)}</div> : <div className="empty-state"><h2>Profilinden hedef sıralamanı ekle.</h2><Button to="/profil">Profilim</Button></div>) : null}
+        <p className="university-data-note">Bilgilendirme: Veriler ÖSYM ve YÖK Atlas tarafından yayımlanan bilgiler esas alınarak sunulmaktadır. Kaynaklardaki güncelleme, düzeltme veya teknik farklılıklar nedeniyle veriler değişiklik gösterebilir. Tercih işlemlerinizi tamamlamadan önce güncel bilgileri ÖSYM ve YÖK Atlas üzerinden kontrol ediniz.</p>
       </Container></section>
     </>
   )

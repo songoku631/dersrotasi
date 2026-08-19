@@ -1,4 +1,4 @@
-export const universityHistoryYears = [2025, 2024, 2023]
+export const universityHistoryYears = [2026, 2025, 2024, 2023]
 
 export function historyValue(program, collection, year, fallbackField) {
   const values = program?.[collection]
@@ -6,7 +6,7 @@ export function historyValue(program, collection, year, fallbackField) {
     return values[String(year)]
   }
 
-  const sourceYear = Number(program?.year) === 2026 ? 2025 : Number(program?.year)
+  const sourceYear = Number(program?.year)
   return sourceYear === year ? program?.[fallbackField] ?? null : null
 }
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use DersRotasi\Repositories\UniversityRepository;
+use DersRotasi\Repositories\FavoriteRepository;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -44,6 +45,8 @@ $pdo->exec(
         UNIQUE (program_code, year)
     )'
 );
+$pdo->sqliteCreateCollation('utf8mb4_tr_0900_as_cs', 'strcmp');
+$pdo->sqliteCreateCollation('utf8mb4_tr_0900_ai_ci', 'strcasecmp');
 $pdo->exec(
     'CREATE TABLE program_historical_mappings (
         current_program_code TEXT NOT NULL,
@@ -52,6 +55,14 @@ $pdo->exec(
         confidence TEXT NOT NULL,
         verification_status TEXT NOT NULL,
         UNIQUE (current_program_code, historical_year)
+    )'
+);
+$pdo->exec(
+    'CREATE TABLE favorites (
+        id INTEGER PRIMARY KEY,
+        firebase_uid TEXT NOT NULL,
+        university_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )'
 );
 
@@ -67,9 +78,11 @@ $university = 'İSTANBUL MEDİPOL ÜNİVERSİTESİ';
 $department = 'Tıp (İngilizce) (Burslu)';
 $common = ['İSTANBUL', 'say', 'vakif', 'orgun', 'İngilizce', 'burslu', 6, 10, 10];
 $fixtures = [
+    [500, '203110477', 2026, $university, 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 559.69717, 1],
     [1, '203110477', 2025, $university, 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 551.13218, 38],
     [21493, '203110477', 2024, $university, 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 554.91557, 31],
     [21492, '203110477', 2023, $university, 'ULUSLARARASI TIP FAKÜLTESİ', $department, ...$common, 555.35802, 30],
+    [501, '203190967', 2026, $university, 'TIP FAKÜLTESİ', $department, ...$common, 556.00000, 20],
     [78, '203190967', 2025, $university, 'TIP FAKÜLTESİ', $department, ...$common, 533.83234, 1321],
     [21637, '203190967', 2024, $university, 'TIP FAKÜLTESİ', $department, ...$common, 554.91557, 31],
     [21638, '203100001', 2023, 'TARİHSEL KAYNAK ÜNİVERSİTESİ', 'TIP FAKÜLTESİ', $department, ...$common, 540.00000, 999],
@@ -99,19 +112,20 @@ $mappingInsert->execute(['203110477', '203100002', 2023, 'high', 'verified']);
 
 $expected = [
     '203110477' => [
-        'id' => 1,
+        'id' => 500,
         'faculty' => 'ULUSLARARASI TIP FAKÜLTESİ',
-        'rankings' => [2025 => 38, 2024 => 31, 2023 => 30],
+        'rankings' => [2026 => 1, 2025 => 38, 2024 => 31, 2023 => 30],
     ],
     '203190967' => [
-        'id' => 78,
+        'id' => 501,
         'faculty' => 'TIP FAKÜLTESİ',
-        'rankings' => [2025 => 1321, 2024 => 31, 2023 => 999],
+        'rankings' => [2026 => 20, 2025 => 1321, 2024 => 31, 2023 => 999],
     ],
 ];
 $baseline = null;
 $repository = new UniversityRepository($pdo);
 $rankSorts = [
+    'rank_2026_asc', 'rank_2026_desc',
     'rank_2025_asc', 'rank_2025_desc',
     'rank_2024_asc', 'rank_2024_desc',
     'rank_2023_asc', 'rank_2023_desc',
@@ -155,7 +169,31 @@ foreach ($rankSorts as $sort) {
     }
 }
 
+$pdo->exec("INSERT INTO favorites (id, firebase_uid, university_id) VALUES (1, 'test-user', 1)");
+$favoriteResult = $repository->paginate([
+    'limit' => 100,
+    'university' => [$university],
+    'department' => [$department],
+], 'test-user');
+$favoriteByCode = array_column($favoriteResult['items'], null, 'program_code');
+historicalSortCheck(
+    $favoriteByCode['203110477']['is_favorite'] === 1,
+    '2025 satırına bağlı favori aynı kodlu 2026 programında korunmadı.'
+);
+historicalSortCheck(
+    $favoriteByCode['203190967']['is_favorite'] === 0,
+    'İlgisiz program favori olarak işaretlendi.'
+);
+$favoriteItems = (new FavoriteRepository($pdo))->all('test-user');
+historicalSortCheck(count($favoriteItems) === 1, 'Favori deposu aynı kodlu 2026 programını döndürmedi.');
+historicalSortCheck($favoriteItems[0]['id'] === 500, 'Favori deposu güncel 2026 satırını temel almadı.');
+historicalSortCheck(
+    $favoriteItems[0]['rankings'] === [2026 => 1, 2025 => 38, 2024 => 31, 2023 => 30],
+    'Favori deposunda dört yıllık historical zincir bozuldu.'
+);
+
 $filterCases = [
+    ['rank_2026_asc', 1, 10, ['203110477']],
     ['rank_2025_asc', 30, 40, ['203110477']],
     ['rank_2024_desc', 30, 40, ['203110477', '203190967']],
     ['rank_2023_asc', 29, 31, ['203110477']],
@@ -178,15 +216,19 @@ foreach ($filterCases as [$sort, $minRank, $maxRank, $expectedCodes]) {
 $sortUniversity = 'SIRALAMA TEST ÜNİVERSİTESİ';
 $sortDepartment = 'Sıralama Test Programı';
 $sortFixtures = [
+    [30000, '900000001', 2026, 35, 552.1],
     [30001, '900000001', 2025, 38, 551.1],
     [30002, '900000001', 2024, 43, 550.1],
     [30003, '900000001', 2023, 64, 549.1],
+    [30013, '900000002', 2026, 2750000, 204.1],
     [30004, '900000002', 2025, 2754617, 201.1],
     [30005, '900000002', 2024, 2753685, 202.1],
     [30006, '900000002', 2023, 2753424, 203.1],
+    [30014, '900000003', 2026, 0, 0.0],
     [30007, '900000003', 2025, 0, 0.0],
     [30008, '900000003', 2024, 0, 0.0],
     [30009, '900000003', 2023, 0, 0.0],
+    [30015, '900000004', 2026, null, null],
     [30010, '900000004', 2025, null, null],
     [30011, '900000004', 2024, null, null],
     [30012, '900000004', 2023, null, null],
@@ -202,7 +244,7 @@ foreach ($sortFixtures as [$id, $code, $year, $rank, $score]) {
 
 $sortPayloadBaseline = null;
 foreach ($rankSorts as $sort) {
-    preg_match('/^rank_(202[345])_(asc|desc)$/', $sort, $matches);
+    preg_match('/^rank_(202[3-6])_(asc|desc)$/', $sort, $matches);
     $year = (int) $matches[1];
     $direction = $matches[2];
     $result = $repository->paginate([

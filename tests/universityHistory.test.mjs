@@ -6,19 +6,21 @@ import {
   historyValue,
 } from '../src/utils/universityHistory.js'
 
-test('üç yıllık değerleri normalize edilmiş API alanlarından okur', () => {
+test('dört yıllık değerleri normalize edilmiş API alanlarından okur', () => {
   const program = {
-    year: 2025,
-    base_rank: 7395,
-    rankings: { 2025: 7395, 2024: 5725, 2023: null },
+    year: 2026,
+    base_rank: 1,
+    rankings: { 2026: 1, 2025: 7395, 2024: 5725, 2023: null },
   }
 
+  assert.equal(historyValue(program, 'rankings', 2026, 'base_rank'), 1)
   assert.equal(historyValue(program, 'rankings', 2024, 'base_rank'), 5725)
   assert.equal(historyValue(program, 'rankings', 2023, 'base_rank'), null)
 })
 
-test('eski tek yıllık yanıtlarda 2026 etiketini 2025 görünümü olarak ele alır', () => {
-  assert.equal(historyValue({ year: 2026, base_rank: 7395 }, 'rankings', 2025, 'base_rank'), 7395)
+test('tek yıllık yanıtlarda 2026 değerini yalnız 2026 hücresinde gösterir', () => {
+  assert.equal(historyValue({ year: 2026, base_rank: 1 }, 'rankings', 2026, 'base_rank'), 1)
+  assert.equal(historyValue({ year: 2026, base_rank: 1 }, 'rankings', 2025, 'base_rank'), null)
 })
 
 test('eksik değerleri çizgi, sayıları Türkçe biçimde gösterir', () => {

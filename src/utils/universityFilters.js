@@ -19,11 +19,11 @@ const universityApiParamNames = new Set([
   'page',
 ])
 
-export const defaultUniversitySort = 'rank_2025_asc'
+export const defaultUniversitySort = 'rank_2026_asc'
 
 export const universitySortOptions = [
   { value: defaultUniversitySort, label: 'En iyi sıralamadan en kötüye' },
-  { value: 'rank_2025_desc', label: 'En kötü sıralamadan en iyiye' },
+  { value: 'rank_2026_desc', label: 'En kötü sıralamadan en iyiye' },
 ]
 
 const incomingScoreTypeMap = {
@@ -41,13 +41,13 @@ export function normalizeScoreType(value) {
 }
 
 export function normalizeUniversitySort(value) {
-  return value === 'rank_2025_desc' ? 'rank_2025_desc' : defaultUniversitySort
+  return value === 'rank_2026_desc' ? 'rank_2026_desc' : defaultUniversitySort
 }
 
 export function universityRankFilterLabels() {
   return {
-    min: '2025 sıra min.',
-    max: '2025 sıra maks.',
+    min: '2026 sıra min.',
+    max: '2026 sıra maks.',
   }
 }
 

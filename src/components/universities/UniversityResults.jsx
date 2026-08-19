@@ -64,7 +64,7 @@ function DesktopTable({ programs, busyId, onFavorite, onPreference }) {
   return (
     <div className="university-table-scroll">
       <table className="university-results-table">
-        <caption className="visually-hidden">Üniversite programlarının 2025, 2024 ve 2023 karşılaştırması</caption>
+        <caption className="visually-hidden">Üniversite programlarının 2026, 2025, 2024 ve 2023 karşılaştırması</caption>
         <thead>
           <tr>
             <th aria-label="Favori" />
@@ -72,10 +72,12 @@ function DesktopTable({ programs, busyId, onFavorite, onPreference }) {
             <th>Bölüm / Program</th>
             <th>Puan</th>
             <th>Öğretim / Dil / Burs</th>
-            <th className="university-year-heading university-year-heading--current"><span>2025</span><small>Sıra</small></th>
+            <th className="university-year-heading university-year-heading--current"><span>2026</span><small>Sıra</small></th>
+            <th className="university-year-heading"><span>2025</span><small>Sıra</small></th>
             <th className="university-year-heading"><span>2024</span><small>Sıra</small></th>
             <th className="university-year-heading"><span>2023</span><small>Sıra</small></th>
-            <th className="university-year-heading university-year-heading--current"><span>2025</span><small>Puan</small></th>
+            <th className="university-year-heading university-year-heading--current"><span>2026</span><small>Puan</small></th>
+            <th className="university-year-heading"><span>2025</span><small>Puan</small></th>
             <th className="university-year-heading"><span>2024</span><small>Puan</small></th>
             <th className="university-year-heading"><span>2023</span><small>Puan</small></th>
             <th>Kont.</th>
@@ -102,16 +104,16 @@ function DesktopTable({ programs, busyId, onFavorite, onPreference }) {
                 <td><span className="university-score-type">{enumLabel(program.score_type)}</span></td>
                 <td><EducationSummary program={program} /></td>
                 {universityHistoryYears.map((year) => (
-                  <td className={year === 2025 ? 'university-number university-number--current' : 'university-number'} key={`rank-${year}`}>
+                  <td className={year === 2026 ? 'university-number university-number--current' : 'university-number'} key={`rank-${year}`}>
                     {formatCompactRank(historyValue(program, 'rankings', year, 'base_rank'))}
                   </td>
                 ))}
                 {universityHistoryYears.map((year) => (
-                  <td className={year === 2025 ? 'university-number university-number--current' : 'university-number'} key={`score-${year}`}>
+                  <td className={year === 2026 ? 'university-number university-number--current' : 'university-number'} key={`score-${year}`}>
                     {formatCompactScore(historyValue(program, 'scores', year, 'base_score'))}
                   </td>
                 ))}
-                <td className="university-number">{formatCompactQuota(historyValue(program, 'quotas', 2025, 'quota'))}</td>
+                <td className="university-number">{formatCompactQuota(historyValue(program, 'quotas', 2026, 'quota'))}</td>
                 <td><RowActions program={program} busy={busy} onPreference={onPreference} /></td>
               </tr>
             )
@@ -145,7 +147,7 @@ function MobileCards({ programs, busyId, onFavorite, onPreference }) {
             <EducationSummary program={program} />
             <div className="university-mobile-history">
               {universityHistoryYears.map((year) => (
-                <div className={year === 2025 ? 'current' : ''} key={year}>
+                <div className={year === 2026 ? 'current' : ''} key={year}>
                   <strong>{year}</strong>
                   <span><small>Sıra</small>{formatCompactRank(historyValue(program, 'rankings', year, 'base_rank'))}</span>
                   <span><small>Puan</small>{formatCompactScore(historyValue(program, 'scores', year, 'base_score'))}</span>
@@ -153,7 +155,7 @@ function MobileCards({ programs, busyId, onFavorite, onPreference }) {
               ))}
             </div>
             <footer>
-              <span>2025 kontenjanı: <strong>{formatCompactQuota(historyValue(program, 'quotas', 2025, 'quota'))}</strong></span>
+              <span>2026 kontenjanı: <strong>{formatCompactQuota(historyValue(program, 'quotas', 2026, 'quota'))}</strong></span>
               <RowActions program={program} busy={busy} onPreference={onPreference} />
             </footer>
           </article>
