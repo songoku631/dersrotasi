@@ -169,6 +169,18 @@ foreach ($rankSorts as $sort) {
     }
 }
 
+$nearest2025 = $repository->paginate([
+    'limit' => 100,
+    'sort' => 'rank_2025_nearest',
+    'target_rank' => 1000,
+    'university' => [$university],
+    'department' => [$department],
+]);
+historicalSortCheck(
+    array_column($nearest2025['items'], 'program_code') === ['203190967', '203110477'],
+    '2025 hedef sıraya en yakın sıralama yanlış.'
+);
+
 $pdo->exec("INSERT INTO favorites (id, firebase_uid, university_id) VALUES (1, 'test-user', 1)");
 $favoriteResult = $repository->paginate([
     'limit' => 100,

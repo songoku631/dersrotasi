@@ -7,6 +7,8 @@ use DersRotasi\Config\Env;
 use DersRotasi\Database\Connection;
 use DersRotasi\Subscriptions\SubscriptionRepository;
 use DersRotasi\Subscriptions\PlanCatalog;
+use DersRotasi\Subscriptions\UserPlanService;
+use DersRotasi\Subscriptions\UserRoleRepository;
 use Dotenv\Dotenv;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -31,6 +33,10 @@ function planThrows(callable $callback, int $status, string $message): void
 
 function temporaryPlanTables(PDO $pdo): void
 {
+    $pdo->exec("CREATE TEMPORARY TABLE user_roles (
+      user_key_hash CHAR(64) NOT NULL PRIMARY KEY,
+      role ENUM('admin') NOT NULL
+    ) ENGINE=InnoDB");
     $pdo->exec("CREATE TEMPORARY TABLE user_subscriptions (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       user_key_hash CHAR(64) NOT NULL UNIQUE,
@@ -74,15 +80,18 @@ $pdo = Connection::make($env);
 temporaryPlanTables($pdo);
 $store = new PdoAiUsageStore($pdo);
 $subscriptions = new SubscriptionRepository($pdo);
-$freeLimits = ['daily_requests' => 3, 'daily_token_budget' => 6000];
+$roles = new UserRoleRepository($pdo);
+$freeLimits = ['daily_requests' => 5, 'daily_token_budget' => 40000];
 $premiumLimits = ['daily_requests' => 50, 'daily_token_budget' => 60000];
 
 $catalog = new PlanCatalog(new Env([
-    'AI_FREE_DAILY_REQUESTS' => '3', 'AI_FREE_DAILY_TOKEN_BUDGET' => '6000',
+    'AI_FREE_DAILY_REQUESTS' => '5', 'AI_FREE_DAILY_TOKEN_BUDGET' => '40000',
     'AI_FREE_MAX_MESSAGE_CHARS' => '1200', 'AI_PREMIUM_DAILY_REQUESTS' => '50',
     'AI_PREMIUM_DAILY_TOKEN_BUDGET' => '60000', 'AI_PREMIUM_MAX_MESSAGE_CHARS' => '2500',
     'AI_MAX_OUTPUT_TOKENS' => '500',
 ]));
+planCheck($catalog->limits('free')['daily_requests'] === 5, 'Free daily request limit is wrong.');
+planCheck($catalog->limits('free')['daily_token_budget'] === 40000, 'Free daily token budget is wrong.');
 planCheck($catalog->limits('free')['max_message_chars'] === 1200, 'Free mesaj sınırı yanlış.');
 planCheck($catalog->limits('premium')['daily_requests'] === 50, 'Premium mesaj hakkı yanlış.');
 
@@ -117,16 +126,40 @@ $pdo->prepare(
 planCheck($subscriptions->activePlan($futureHash)['plan_code'] === 'free', 'Başlamamış Premium free olmalı.');
 
 $freeHash = hash('sha256', 'free-user');
-for ($index = 1; $index <= 3; $index++) {
+for ($index = 1; $index <= 5; $index++) {
     $requestHash = hash('sha256', 'free-request-' . $index);
-    $reserved = $store->reserve($freeHash, $requestHash, 'free', $freeLimits, 100, 200000);
+    $reserved = $store->reserve($freeHash, $requestHash, 'free', $freeLimits, 8000, 200000);
     planCheck($reserved['state'] === 'reserved', 'Free istek rezerve edilemedi.');
-    $store->complete($freeHash, $requestHash, 80, ['success' => true, 'answer' => 'ok-' . $index]);
+    $store->complete($freeHash, $requestHash, 7014, ['success' => true, 'answer' => 'ok-' . $index]);
+    $freePlan = (new UserPlanService($subscriptions, $catalog, $store, $roles))->forUid('free-user');
+    planCheck($freePlan['usage']['requests_used'] === $index, 'Free usage count must come from the database.');
+    planCheck($freePlan['usage']['requests_remaining'] === 5 - $index, 'Free remaining request count is wrong.');
 }
 planThrows(
-    fn () => $store->reserve($freeHash, hash('sha256', 'free-request-4'), 'free', $freeLimits, 100, 200000),
+    fn () => $store->reserve($freeHash, hash('sha256', 'free-request-6'), 'free', $freeLimits, 8000, 200000),
     429,
-    'Free dördüncü istek'
+    'Free altıncı istek'
+);
+
+$adminHash = hash('sha256', 'admin-user');
+$pdo->prepare("INSERT INTO user_roles (user_key_hash, role) VALUES (:hash, 'admin')")
+    ->execute(['hash' => $adminHash]);
+planCheck($roles->role($adminHash) === 'admin', 'Admin rolü tanınmalı.');
+planCheck($roles->role(hash('sha256', 'regular-user')) === 'user', 'Kayıtsız rol normal kullanıcı olmalı.');
+for ($index = 1; $index <= 12; $index++) {
+    $requestHash = hash('sha256', 'admin-request-' . $index);
+    $store->reserve($adminHash, $requestHash, 'free', $freeLimits, 4001, 200000, false);
+    $store->complete($adminHash, $requestHash, 4001, ['success' => true]);
+}
+$adminPlan = (new UserPlanService($subscriptions, $catalog, $store, $roles))->forUid('admin-user');
+planCheck($adminPlan['role'] === 'admin' && $adminPlan['is_admin'] === true, 'Admin plan cevabı rolü taşımalı.');
+planCheck($adminPlan['has_premium_access'] === true, 'Admin Premium özelliklerine erişebilmeli.');
+planCheck($adminPlan['plan'] === 'free', 'Admin rolü temel planı değiştirmemeli.');
+planCheck($adminPlan['usage']['requests_used'] === 12, 'Admin 10 üzeri mesaj gönderebilmeli.');
+planCheck($adminPlan['usage']['tokens_used'] === 48012, 'Admin kullanıcı token limitiyle engellenmemeli.');
+planCheck(
+    $adminPlan['usage']['requests_remaining'] === null && $adminPlan['usage']['tokens_remaining'] === null,
+    'Admin kalan kullanıcı kotası sınırsız olmalı.'
 );
 
 $duplicateHash = hash('sha256', 'duplicate-user');
@@ -162,7 +195,7 @@ planCheck(
 
 planThrows(
     fn () => $store->reserve(hash('sha256', 'token-user'), hash('sha256', 'token-request'), 'free', [
-        'daily_requests' => 3, 'daily_token_budget' => 50,
+        'daily_requests' => 5, 'daily_token_budget' => 50,
     ], 51, 200000),
     429,
     'Kullanıcı token bütçesi'
@@ -171,6 +204,19 @@ planThrows(
     fn () => $store->reserve(hash('sha256', 'global-user'), hash('sha256', 'global-request'), 'premium', $premiumLimits, 101, 100),
     429,
     'Global token bütçesi'
+);
+planThrows(
+    fn () => $store->reserve(
+        hash('sha256', 'global-admin'),
+        hash('sha256', 'global-admin-request'),
+        'free',
+        $freeLimits,
+        101,
+        100,
+        false
+    ),
+    429,
+    'Admin global token bütçesi'
 );
 
 $brokenPdo = Connection::make($env);

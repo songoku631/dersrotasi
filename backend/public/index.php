@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use DersRotasi\AI\AiChatService;
 use DersRotasi\AI\AiChatValidator;
+use DersRotasi\AI\AiConversationRepository;
 use DersRotasi\AI\AiIntent;
 use DersRotasi\AI\LazyAiGroundingProvider;
 use DersRotasi\AI\OpenAiResponsesClient;
@@ -18,18 +19,24 @@ use DersRotasi\Middleware\FirebaseAuthMiddleware;
 use DersRotasi\Repositories\FavoriteRepository;
 use DersRotasi\Repositories\PreferenceRepository;
 use DersRotasi\Repositories\ProfileRepository;
+use DersRotasi\Repositories\StudyPlanRepository;
 use DersRotasi\Repositories\UniversityRepository;
 use DersRotasi\Repositories\YksEstimateRepository;
 use DersRotasi\Repositories\YksRankDataRepository;
 use DersRotasi\Services\FirebaseTokenVerifier;
 use DersRotasi\Services\OfficialYksRankBandService;
+use DersRotasi\Services\PremiumAiSummaryService;
+use DersRotasi\Services\PremiumAnalysisService;
+use DersRotasi\Services\StudyPlanGenerationService;
 use DersRotasi\Services\PreferenceEvaluationService;
 use DersRotasi\Services\YksBacktestConfidenceService;
 use DersRotasi\Services\YksRankEstimator;
 use DersRotasi\Services\YksScoreCalculator;
 use DersRotasi\Subscriptions\PlanCatalog;
+use DersRotasi\Subscriptions\PremiumAccessGuard;
 use DersRotasi\Subscriptions\SubscriptionRepository;
 use DersRotasi\Subscriptions\UserPlanService;
+use DersRotasi\Subscriptions\UserRoleRepository;
 use Dotenv\Dotenv;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -86,6 +93,83 @@ $calculateYks = static function (array $body) use ($root, $db): array {
     $result['confidence_explanation'] = $validation['explanation'];
     return $result;
 };
+$planForUid = static function (string $firebaseUid) use ($db, $env): array {
+    return (new UserPlanService(
+        new SubscriptionRepository($db()),
+        new PlanCatalog($env),
+        new PdoAiUsageStore($db()),
+        new UserRoleRepository($db())
+    ))->forUid($firebaseUid);
+};
+$runPremiumAi = static function (
+    string $firebaseUid,
+    string $requestId,
+    string $feature,
+    array $facts,
+    callable $summarize
+) use ($db, $env): array {
+    if (!preg_match('/^[A-Za-z0-9._:-]{8,128}$/', $requestId)) {
+        throw new RuntimeException('Geçerli bir request_id gönderilmelidir.', 422);
+    }
+    $usageStore = new PdoAiUsageStore($db());
+    $plan = (new UserPlanService(
+        new SubscriptionRepository($db()),
+        new PlanCatalog($env),
+        $usageStore,
+        new UserRoleRepository($db())
+    ))->forUid($firebaseUid);
+    (new PremiumAccessGuard())->assertAllowed($plan);
+
+    $userKeyHash = hash('sha256', $firebaseUid);
+    $requestIdHash = hash('sha256', 'premium:' . $feature . ':' . $requestId);
+    $factsJson = json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $reservedTokens = max(1, (int) ceil(strlen($factsJson) / 4)) + $env->aiMaxOutputTokens();
+    $reservation = $usageStore->reserve(
+        $userKeyHash,
+        $requestIdHash,
+        $plan['plan'],
+        $plan['limits'],
+        $reservedTokens,
+        $env->aiGlobalDailyTokenBudget(),
+        !$plan['is_admin']
+    );
+    if ($reservation['state'] === 'completed') {
+        return $reservation['response'];
+    }
+
+    try {
+        (new RateLimiter(new PdoRateLimitStore($db())))->hit('uid:' . $firebaseUid);
+        if (!$env->aiChatEnabled()) {
+            throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
+        }
+        $client = new OpenAiResponsesClient(
+            $env->openAiApiKey(),
+            $env->openAiModel(),
+            $env->openAiTimeout(),
+            $env->sslCaBundle(),
+            null,
+            $env->aiMaxOutputTokens()
+        );
+        $narration = $summarize(
+            new PremiumAiSummaryService($client),
+            hash('sha256', 'uid:' . $firebaseUid)
+        );
+        $response = [
+            'success' => true,
+            'data' => [...$facts, 'summary' => $narration['summary']],
+            'meta' => [...$narration['meta'], 'plan' => $plan['plan'], 'feature' => $feature],
+        ];
+        return $usageStore->complete(
+            $userKeyHash,
+            $requestIdHash,
+            (int) ($narration['meta']['usage']['total_tokens'] ?? 0),
+            $response
+        );
+    } catch (Throwable $exception) {
+        $usageStore->fail($userKeyHash, $requestIdHash);
+        throw $exception;
+    }
+};
 
 try {
     $path = rtrim($request->path(), '/') ?: '/';
@@ -117,7 +201,8 @@ try {
         $plan = (new UserPlanService(
             new SubscriptionRepository($db()),
             new PlanCatalog($env),
-            $usageStore
+            $usageStore,
+            new UserRoleRepository($db())
         ))->forUid($firebaseUid);
         JsonResponse::send(['success' => true, 'data' => $plan]);
     }
@@ -146,6 +231,73 @@ try {
         JsonResponse::send(['success' => true, 'data' => $service->compare($request->json())]);
     }
 
+    if ($method === 'POST' && $path === '/api/premium/preference-analysis') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $plan = $planForUid($firebaseUid);
+        (new PremiumAccessGuard())->assertAllowed($plan);
+        $facts = (new PremiumAnalysisService(
+            new PreferenceRepository($db()),
+            new ProfileRepository($db()),
+            new UniversityRepository($db())
+        ))->analyzePreferences($firebaseUid, $body['user_rank'] ?? null);
+        $response = $runPremiumAi(
+            $firebaseUid,
+            (string) ($body['request_id'] ?? ''),
+            'preference_analysis',
+            $facts,
+            static fn (PremiumAiSummaryService $service, string $safety): array =>
+                $service->preferenceSummary($facts, $safety)
+        );
+        JsonResponse::send($response);
+    }
+
+    if ($method === 'POST' && $path === '/api/premium/program-comparison') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $plan = $planForUid($firebaseUid);
+        (new PremiumAccessGuard())->assertAllowed($plan);
+        if (!is_array($body['program_ids'] ?? null)) {
+            throw new RuntimeException('program_ids iki program kimliği içermelidir.', 422);
+        }
+        $facts = (new PremiumAnalysisService(
+            new PreferenceRepository($db()),
+            new ProfileRepository($db()),
+            new UniversityRepository($db())
+        ))->comparePrograms($firebaseUid, $body['program_ids'], $body['user_rank'] ?? null);
+        $response = $runPremiumAi(
+            $firebaseUid,
+            (string) ($body['request_id'] ?? ''),
+            'program_comparison',
+            $facts,
+            static fn (PremiumAiSummaryService $service, string $safety): array =>
+                $service->comparisonSummary($facts, $safety)
+        );
+        JsonResponse::send($response);
+    }
+
+    if ($path === '/api/ai/conversations') {
+        $firebaseUid = $authenticate()['uid'];
+        $repository = new AiConversationRepository($db());
+        $userKeyHash = hash('sha256', $firebaseUid);
+        if ($method === 'GET') {
+            JsonResponse::send(['success' => true, 'data' => ['items' => $repository->all($userKeyHash)]]);
+        }
+        if ($method === 'POST') {
+            JsonResponse::send(['success' => true, 'data' => $repository->create($userKeyHash)], 201);
+        }
+    }
+
+    if ($method === 'GET' && preg_match('#^/api/ai/conversations/(\d+)$#', $path, $matches)) {
+        $firebaseUid = $authenticate()['uid'];
+        $detail = (new AiConversationRepository($db()))->find(
+            hash('sha256', $firebaseUid),
+            (int) $matches[1],
+            $firebaseUid
+        );
+        JsonResponse::send(['success' => true, 'data' => $detail]);
+    }
+
     if ($method === 'POST' && $path === '/api/ai/chat') {
         $firebaseUid = $authenticate()['uid'];
         $body = $request->json();
@@ -156,11 +308,19 @@ try {
 
         $userKeyHash = hash('sha256', $firebaseUid);
         $requestIdHash = hash('sha256', $requestId);
+        $conversationRepository = new AiConversationRepository($db());
+        if (!array_key_exists('conversation_id', $body) || $body['conversation_id'] === null) {
+            $conversationId = $conversationRepository->create($userKeyHash)['id'];
+        } else {
+            $conversationId = $positiveId($body['conversation_id'], 'conversation_id');
+            $conversationRepository->assertOwned($userKeyHash, $conversationId);
+        }
         $usageStore = new PdoAiUsageStore($db());
         $planService = new UserPlanService(
             new SubscriptionRepository($db()),
             new PlanCatalog($env),
-            $usageStore
+            $usageStore,
+            new UserRoleRepository($db())
         );
         $plan = $planService->forUid($firebaseUid);
         $validated = (new AiChatValidator())->validate($body, $plan['limits']['max_message_chars']);
@@ -169,16 +329,31 @@ try {
             $inputCharacters += strlen($historyItem['content']);
         }
         $reservedTokens = max(1, (int) ceil($inputCharacters / 4)) + $env->aiMaxOutputTokens();
+        if ($plan['plan'] === 'free') {
+            $freePerMessageTokenAllowance = (int) ceil(
+                $plan['limits']['daily_token_budget'] / $plan['limits']['daily_requests']
+            );
+            $reservedTokens = max($reservedTokens, $freePerMessageTokenAllowance);
+        }
         $reservation = $usageStore->reserve(
             $userKeyHash,
             $requestIdHash,
             $plan['plan'],
             $plan['limits'],
             $reservedTokens,
-            $env->aiGlobalDailyTokenBudget()
+            $env->aiGlobalDailyTokenBudget(),
+            !$plan['is_admin']
         );
         if ($reservation['state'] === 'completed') {
-            JsonResponse::send($reservation['response']);
+            $cachedResponse = $reservation['response'];
+            $cachedResponse['conversation'] = $conversationRepository->appendExchange(
+                $userKeyHash,
+                $conversationId,
+                $requestIdHash,
+                $validated['message'],
+                $cachedResponse
+            );
+            JsonResponse::send($cachedResponse);
         }
 
         $rateIdentifier = 'uid:' . $firebaseUid;
@@ -223,10 +398,122 @@ try {
                 $actualTokens,
                 $response
             );
+            $response['conversation'] = $conversationRepository->appendExchange(
+                $userKeyHash,
+                $conversationId,
+                $requestIdHash,
+                $validated['message'],
+                $response
+            );
             JsonResponse::send($response);
         } catch (Throwable $exception) {
             $usageStore->fail($userKeyHash, $requestIdHash);
             throw $exception;
+        }
+    }
+
+    if ($method === 'POST' && $path === '/api/study-plans/ai-generate') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $requestId = $body['request_id'] ?? null;
+        if (!is_string($requestId) || !preg_match('/^[A-Za-z0-9._:-]{8,128}$/', $requestId)) {
+            throw new RuntimeException('Geçerli bir request_id gönderilmelidir.', 422);
+        }
+        $usageStore = new PdoAiUsageStore($db());
+        $plan = (new UserPlanService(
+            new SubscriptionRepository($db()), new PlanCatalog($env), $usageStore, new UserRoleRepository($db())
+        ))->forUid($firebaseUid);
+        (new PremiumAccessGuard())->assertAllowed($plan, 'AI destekli çalışma planı Dersrotası Premium’a özel.');
+        $userKeyHash = hash('sha256', $firebaseUid);
+        $requestIdHash = hash('sha256', 'study-plan:' . $requestId);
+        $inputJson = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $reservedTokens = max(1, (int) ceil(strlen($inputJson) / 4)) + $env->aiMaxOutputTokens();
+        $reservation = $usageStore->reserve(
+            $userKeyHash, $requestIdHash, $plan['plan'], $plan['limits'], $reservedTokens,
+            $env->aiGlobalDailyTokenBudget(), !$plan['is_admin']
+        );
+        if ($reservation['state'] === 'completed') JsonResponse::send($reservation['response']);
+
+        try {
+            (new RateLimiter(new PdoRateLimitStore($db())))->hit('uid:' . $firebaseUid);
+            if (!$env->aiChatEnabled()) throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
+            $generated = (new StudyPlanGenerationService(new OpenAiResponsesClient(
+                $env->openAiApiKey(), $env->openAiModel(), $env->openAiTimeout(),
+                $env->sslCaBundle(), null, $env->aiMaxOutputTokens()
+            )))->generate(
+                $body,
+                (new ProfileRepository($db()))->findByUid($firebaseUid),
+                hash('sha256', 'uid:' . $firebaseUid)
+            );
+            $response = [
+                'success' => true,
+                'message' => 'AI çalışma planı önizlemesi hazır.',
+                'data' => [
+                    'tasks' => $generated['tasks'], 'summary' => $generated['summary'],
+                    'disclaimer' => $generated['disclaimer'], 'week_start' => $body['week_start'] ?? '',
+                ],
+                'meta' => [...$generated['meta'], 'plan' => $plan['plan'], 'feature' => 'study_plan_generation'],
+            ];
+            JsonResponse::send($usageStore->complete(
+                $userKeyHash, $requestIdHash,
+                (int) ($generated['meta']['usage']['total_tokens'] ?? 0), $response
+            ));
+        } catch (Throwable $exception) {
+            $usageStore->fail($userKeyHash, $requestIdHash);
+            throw $exception;
+        }
+    }
+
+    if ($method === 'POST' && $path === '/api/study-plans/ai-apply') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $plan = $planForUid($firebaseUid);
+        (new PremiumAccessGuard())->assertAllowed($plan, 'AI destekli çalışma planı Dersrotası Premium’a özel.');
+        if (!is_array($body['tasks'] ?? null)) {
+            throw new RuntimeException('Kaydedilecek AI görevleri geçersiz.', 422);
+        }
+        $week = (new StudyPlanRepository($db()))->addGeneratedTasks(
+            $firebaseUid, $body['week_start'] ?? '', $body['tasks']
+        );
+        JsonResponse::send([
+            'success' => true, 'message' => 'AI çalışma planı haftana eklendi.', 'data' => ['plan' => $week],
+        ], 201);
+    }
+
+    if ($path === '/api/study-plans') {
+        $firebaseUid = $authenticate()['uid'];
+        $repository = new StudyPlanRepository($db());
+        $weekStart = $method === 'GET' ? ($_GET['week_start'] ?? '') : ($request->json()['week_start'] ?? '');
+        if ($method === 'GET') {
+            JsonResponse::send(['success' => true, 'data' => $repository->week($firebaseUid, $weekStart)]);
+        }
+        if ($method === 'DELETE') {
+            $deleted = $repository->clearWeek($firebaseUid, $weekStart);
+            JsonResponse::send(['success' => true, 'message' => "{$deleted} görev silindi."]);
+        }
+    }
+
+    if ($method === 'POST' && $path === '/api/study-plans/tasks') {
+        $firebaseUid = $authenticate()['uid'];
+        $body = $request->json();
+        $task = (new StudyPlanRepository($db()))->addTask($firebaseUid, $body['week_start'] ?? '', $body);
+        JsonResponse::send(['success' => true, 'message' => 'Görev eklendi.', 'data' => $task], 201);
+    }
+
+    if (preg_match('#^/api/study-plans/tasks/(\d+)$#', $path, $matches)) {
+        $firebaseUid = $authenticate()['uid'];
+        $repository = new StudyPlanRepository($db());
+        if ($method === 'PUT') {
+            JsonResponse::send([
+                'success' => true, 'message' => 'Görev güncellendi.',
+                'data' => $repository->updateTask($firebaseUid, (int) $matches[1], $request->json()),
+            ]);
+        }
+        if ($method === 'DELETE') {
+            if (!$repository->removeTask($firebaseUid, (int) $matches[1])) {
+                throw new RuntimeException('Çalışma görevi bulunamadı.', 404);
+            }
+            JsonResponse::send(['success' => true, 'message' => 'Görev silindi.']);
         }
     }
 

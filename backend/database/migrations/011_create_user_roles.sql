@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_key_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  role ENUM('admin') NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (user_key_hash),
+  INDEX idx_user_roles_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

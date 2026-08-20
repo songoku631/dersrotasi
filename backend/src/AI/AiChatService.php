@@ -17,6 +17,8 @@ Kesin yerleşirsin, kesin gelir veya kesin gelmez gibi ifadeler kullanma.
 Bağlamda bulunmayan bir değeri üretme, tahmin etme veya başka bir kaynaktan biliyormuş gibi sunma.
 Veri yoksa ya da filtreleme için sıralama/puan türü/şehir gibi bilgi eksikse bunu açıkça söyle ve gerekli bilgiyi sor.
 Programları sunarken mümkün olduğunda üniversite, program, burs/tür, yıl ve başarı sırasını düzenli göster.
+VERİTABANI BAĞLAMI program içeriyorsa programları tek tek tekrar listeleme; yalnızca kısa bir özet yaz, yapılandırılmış program kartları uygulama tarafından ayrıca gösterilecektir.
+Bağlamdaki açık şehir, üniversite, bölüm, puan türü, burs, öğretim türü, dil ve yıl filtrelerinin dışındaki hiçbir programdan söz etme.
 "Meslek", "kariyer", "iş imkanı" veya "iyi kazanç" sorularında önce VERİTABANI BAĞLAMI içindeki somut program seçeneklerini açıkla; ardından bu programların açabileceği kariyer alanlarını yorumla.
 Yüksek kazanç garantisi verme. Kazancın sektör, deneyim, uzmanlık, şehir ve kişisel koşullara bağlı olduğunu kısaca belirt.
 "Daha güvenli", "yakın/hedef" ve "daha iddialı" grupları yalnızca bağlamdaki evaluation alanına dayanarak kullan; bunun geçmiş sonuçlara dayalı yaklaşık yorum olduğunu belirt.
@@ -48,14 +50,15 @@ PROMPT;
         $context = $this->grounding->find($message, $firebaseUid);
         $context['items'] = array_slice($context['items'], 0, self::MAX_CONTEXT_ITEMS);
         if ($context['searched'] && $context['items'] === []) {
-            $subject = $context['source'] === 'favorites'
+            $answer = $context['source'] === 'favorites'
                 ? 'Favorilerinde karşılaştırılabilecek program bulunamadı.'
-                : 'Belirttiğin ölçütlere uygun program veritabanında bulunamadı.';
+                : 'Bu filtrelerle sonuç bulunamadı.';
 
             return [
                 'success' => true,
-                'answer' => $subject . ' Filtrelerini genişletip tekrar deneyebilirsin.',
+                'answer' => $answer,
                 'data' => [],
+                'programs' => [],
                 'meta' => [
                     'grounded' => true,
                     'source' => $context['source'],
@@ -101,6 +104,9 @@ PROMPT;
             'success' => true,
             'answer' => $response['answer'],
             'data' => $context['items'],
+            'programs' => in_array($context['source'], ['universities', 'favorites'], true)
+                ? $context['items']
+                : [],
             'meta' => [
                 ...($response['meta'] ?? []),
                 'grounded' => (bool) $context['required'],

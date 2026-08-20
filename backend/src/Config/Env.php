@@ -132,12 +132,12 @@ final class Env
 
     public function aiFreeDailyRequests(): int
     {
-        return $this->positiveInt('AI_FREE_DAILY_REQUESTS', 3, 1, 1000);
+        return $this->positiveInt('AI_FREE_DAILY_REQUESTS', 5, 1, 1000);
     }
 
     public function aiFreeDailyTokenBudget(): int
     {
-        return $this->positiveInt('AI_FREE_DAILY_TOKEN_BUDGET', 6000, 500, 10000000);
+        return $this->positiveInt('AI_FREE_DAILY_TOKEN_BUDGET', 40000, 500, 10000000);
     }
 
     public function aiFreeMaxMessageChars(): int

@@ -1,25 +1,36 @@
-import { ArrowDown, ArrowUp, Save, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Crown, GitCompareArrows, Save, Sparkles, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  getPreferences,
-  removePreference,
-  reorderPreferences,
-  updatePreferenceNote,
-} from '../api/preferencesApi'
+import { analyzePreferenceList, comparePremiumPrograms } from '../api/premiumApi'
+import { getPreferences, removePreference, reorderPreferences, updatePreferenceNote } from '../api/preferencesApi'
 import Button from '../components/Button'
 import Container from '../components/Container'
 import PageHeader from '../components/PageHeader'
 import EmptyPreferences from '../components/preferences/EmptyPreferences'
+import PreferenceAnalysisPanel from '../components/premium/PreferenceAnalysisPanel'
+import PremiumGateModal from '../components/premium/PremiumGateModal'
+import ProgramComparisonModal from '../components/premium/ProgramComparisonModal'
 import { useAuth } from '../context/useAuth'
+import { useUserPlan } from '../hooks/useUserPlan'
 import { enumLabel, formatRank, formatScore } from '../utils/universityFormat'
 
 function PreferencesPage() {
   const { user } = useAuth()
+  const { loading: planLoading, plan, refresh: refreshPlan } = useUserPlan(user)
   const [preferences, setPreferences] = useState([])
   const [userRank, setUserRank] = useState(null)
   const [status, setStatus] = useState('loading')
   const [message, setMessage] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const [gateOpen, setGateOpen] = useState(false)
+  const [analysis, setAnalysis] = useState(null)
+  const [analysisBusy, setAnalysisBusy] = useState(false)
+  const [rankPromptOpen, setRankPromptOpen] = useState(false)
+  const [rankInput, setRankInput] = useState('')
+  const [comparisonIds, setComparisonIds] = useState([])
+  const [comparison, setComparison] = useState(null)
+  const [comparisonBusy, setComparisonBusy] = useState(false)
+  const [comparisonError, setComparisonError] = useState('')
+  const hasPremiumAccess = Boolean(plan?.has_premium_access || plan?.is_premium || plan?.is_admin)
 
   const load = useCallback((signal) => {
     setStatus('loading'); setMessage('')
@@ -54,6 +65,7 @@ function PreferencesPage() {
     try {
       const response = await removePreference(user, item.id)
       setPreferences((current) => current.filter((entry) => entry.id !== item.id).map((entry, index) => ({ ...entry, position: index + 1 })))
+      setComparisonIds((current) => current.filter((id) => id !== item.id))
       setMessage(response.message)
     } catch (error) { setMessage(error.message) }
     finally { setBusyId(null) }
@@ -70,10 +82,44 @@ function PreferencesPage() {
     try {
       await reorderPreferences(user, positioned.map((item) => ({ university_id: item.id, position: item.position })))
       setMessage('Tercih sıralaman başarıyla kaydedildi.')
-    } catch (error) {
-      setPreferences(previous)
-      setMessage(error.message)
-    }
+    } catch (error) { setPreferences(previous); setMessage(error.message) }
+  }
+
+  async function runAnalysis(rank) {
+    setAnalysisBusy(true); setMessage(''); setRankPromptOpen(false)
+    try {
+      const response = await analyzePreferenceList(user, rank, crypto.randomUUID())
+      setAnalysis(response.data)
+      if (!userRank) setUserRank(Number(rank))
+      refreshPlan()
+    } catch (error) { setMessage(error.message) }
+    finally { setAnalysisBusy(false) }
+  }
+
+  function startAnalysis() {
+    if (planLoading) return
+    if (!hasPremiumAccess) { setGateOpen(true); return }
+    if (!userRank) { setRankInput(''); setRankPromptOpen(true); return }
+    runAnalysis(userRank)
+  }
+
+  async function runComparison(ids) {
+    setComparison(null); setComparisonError(''); setComparisonBusy(true)
+    try {
+      const response = await comparePremiumPrograms(user, ids, userRank, crypto.randomUUID())
+      setComparison(response.data); refreshPlan()
+    } catch (error) { setComparisonError(error.message) }
+    finally { setComparisonBusy(false) }
+  }
+
+  function toggleComparison(id) {
+    if (planLoading) return
+    if (!hasPremiumAccess) { setGateOpen(true); return }
+    if (comparisonIds.includes(id)) { setComparisonIds((current) => current.filter((item) => item !== id)); return }
+    if (comparisonIds.length === 0) { setComparisonIds([id]); setMessage('Karşılaştırmak için bir program daha seç.'); return }
+    const ids = [comparisonIds[0], id]
+    setComparisonIds(ids)
+    runComparison(ids)
   }
 
   return (
@@ -81,7 +127,12 @@ function PreferencesPage() {
       <PageHeader title="Tercihlerim" description="Programlarını sırala, notlarını kaydet ve geçmiş yerleştirme sonuçlarıyla birlikte değerlendir." />
       <section className="section"><Container>
         <div className="information-banner">Değerlendirmeler geçmiş sonuçlara dayalı yaklaşık yardımcı bilgilerdir. Nihai tercihlerinizi ÖSYM’nin güncel kılavuzundan kontrol edin.</div>
+        <div className="preferences-premium-toolbar">
+          <div><p className="eyebrow"><Crown aria-hidden="true" /> Premium</p><h2>Tercihlerini veriye dayalı değerlendir</h2><p>2023–2026 başarı sıraları ve kontenjan eğilimleriyle listenin dengesini gör.</p></div>
+          <Button icon={Sparkles} onClick={startAnalysis} disabled={analysisBusy || planLoading}>{analysisBusy ? 'Analiz Ediliyor...' : 'Tercih Listemi Analiz Et'}</Button>
+        </div>
         {message ? <div className={status === 'error' ? 'form-alert' : 'success-alert'} role="status"><p>{message}</p></div> : null}
+        <PreferenceAnalysisPanel analysis={analysis} />
         {status === 'loading' ? <div className="loading-panel">Tercihlerin yükleniyor...</div> : null}
         {status === 'error' ? <Button onClick={() => load()}>Yeniden Dene</Button> : null}
         {status === 'ready' && preferences.length === 0 ? <EmptyPreferences userName={user.displayName?.split(' ')[0]} /> : null}
@@ -97,12 +148,16 @@ function PreferencesPage() {
                 <Button icon={ArrowDown} variant="secondary" disabled={index === preferences.length - 1 || busyId === item.id} onClick={() => move(index, 1)}>Aşağı Taşı</Button>
                 <Button icon={Save} disabled={busyId === item.id} onClick={() => saveNote(item)}>Notu Kaydet</Button>
                 <Button icon={Trash2} variant="secondary" disabled={busyId === item.id} onClick={() => remove(item)}>Listeden Çıkar</Button>
+                <Button icon={GitCompareArrows} variant={comparisonIds.includes(item.id) ? 'primary' : 'secondary'} disabled={comparisonBusy} onClick={() => toggleComparison(item.id)}>{comparisonIds.includes(item.id) ? 'Seçildi' : 'Karşılaştır'}</Button>
                 <Button to={`/universite-tercih/${item.id}`}>Detayları Gör</Button>
               </div>
             </div>
           </article>
         ))}</div> : null}
       </Container></section>
+      <PremiumGateModal open={gateOpen} onClose={() => setGateOpen(false)} />
+      {rankPromptOpen ? <div className="premium-modal-backdrop" role="presentation" onMouseDown={() => setRankPromptOpen(false)}><form className="premium-modal premium-rank-prompt" role="dialog" aria-modal="true" onSubmit={(event) => { event.preventDefault(); runAnalysis(rankInput) }} onMouseDown={(event) => event.stopPropagation()}><button className="premium-modal__close" type="button" aria-label="Kapat" onClick={() => setRankPromptOpen(false)}><X /></button><p className="eyebrow">Analiz için</p><h2>Başarı sıranı gir</h2><p>Profilinde kayıtlı bir sıra olmadığı için bu analizde kullanılacak sayısal başarı sırasını yaz.</p><label><span>Başarı sırası</span><input type="number" min="1" max="10000000" required value={rankInput} onChange={(event) => setRankInput(event.target.value)} placeholder="Örn. 100000" /></label><Button type="submit" icon={Sparkles}>Analizi Başlat</Button></form></div> : null}
+      <ProgramComparisonModal comparison={comparison} loading={comparisonBusy} error={comparisonError} onClose={() => { setComparison(null); setComparisonError(''); setComparisonIds([]) }} />
     </>
   )
 }

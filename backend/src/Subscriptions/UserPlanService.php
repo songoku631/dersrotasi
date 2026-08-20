@@ -13,7 +13,8 @@ final class UserPlanService
     public function __construct(
         private readonly SubscriptionRepository $subscriptions,
         private readonly PlanCatalog $catalog,
-        private readonly PdoAiUsageStore $usage
+        private readonly PdoAiUsageStore $usage,
+        private readonly UserRoleRepository $roles
     ) {
     }
 
@@ -23,12 +24,17 @@ final class UserPlanService
             $userKeyHash = hash('sha256', $firebaseUid);
             $resolved = $this->subscriptions->activePlan($userKeyHash);
             $planCode = $resolved['plan_code'];
+            $role = $this->roles->role($userKeyHash);
+            $isAdmin = $role === 'admin';
             $limits = $this->catalog->limits($planCode);
             $usage = $this->usage->usage($userKeyHash);
 
             return [
                 'plan' => $planCode,
                 'is_premium' => $planCode === 'premium',
+                'role' => $role,
+                'is_admin' => $isAdmin,
+                'has_premium_access' => $isAdmin || $planCode === 'premium',
                 'limits' => $limits,
                 'available_plans' => [
                     'free' => $this->catalog->limits('free'),
@@ -36,8 +42,12 @@ final class UserPlanService
                 ],
                 'usage' => [
                     ...$usage,
-                    'requests_remaining' => max(0, $limits['daily_requests'] - $usage['requests_used']),
-                    'tokens_remaining' => max(0, $limits['daily_token_budget'] - $usage['tokens_used']),
+                    'requests_remaining' => $isAdmin
+                        ? null
+                        : max(0, $limits['daily_requests'] - $usage['requests_used']),
+                    'tokens_remaining' => $isAdmin
+                        ? null
+                        : max(0, $limits['daily_token_budget'] - $usage['tokens_used']),
                 ],
                 'subscription' => $resolved['subscription'],
             ];

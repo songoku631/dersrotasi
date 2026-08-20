@@ -20,7 +20,8 @@ final class PdoAiUsageStore
         string $planCode,
         array $limits,
         int $reservedTokens,
-        int $globalTokenBudget
+        int $globalTokenBudget,
+        bool $enforceUserLimits = true
     ): array {
         try {
             $this->pdo->beginTransaction();
@@ -52,7 +53,7 @@ final class PdoAiUsageStore
 
             $daily = $this->lockedDailyUsage($userKeyHash, $today);
             $global = $this->lockedGlobalUsage($today);
-            if ($daily['request_count'] >= (int) $limits['daily_requests']) {
+            if ($enforceUserLimits && $daily['request_count'] >= (int) $limits['daily_requests']) {
                 throw new RuntimeException(
                     $planCode === 'premium'
                         ? 'Premium günlük AI mesaj hakkın doldu. Yarın tekrar deneyebilirsin.'
@@ -60,7 +61,7 @@ final class PdoAiUsageStore
                     429
                 );
             }
-            if ($daily['token_count'] + $reservedTokens > (int) $limits['daily_token_budget']) {
+            if ($enforceUserLimits && $daily['token_count'] + $reservedTokens > (int) $limits['daily_token_budget']) {
                 throw new RuntimeException(
                     $planCode === 'premium'
                         ? 'Premium günlük AI token bütçen doldu. Yarın tekrar deneyebilirsin.'

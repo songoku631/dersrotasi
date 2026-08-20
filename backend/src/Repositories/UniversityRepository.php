@@ -26,12 +26,16 @@ final class UniversityRepository
         'score_asc' => 'u.base_score IS NULL, u.base_score ASC',
         'rank_2026_asc' => '(ranking_2026 IS NULL OR ranking_2026 <= 0), ranking_2026 ASC',
         'rank_2026_desc' => '(ranking_2026 IS NULL OR ranking_2026 <= 0), ranking_2026 DESC',
+        'rank_2026_nearest' => '',
         'rank_2025_asc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 ASC',
         'rank_2025_desc' => '(ranking_2025 IS NULL OR ranking_2025 <= 0), ranking_2025 DESC',
+        'rank_2025_nearest' => '',
         'rank_2024_asc' => '(ranking_2024 IS NULL OR ranking_2024 <= 0), ranking_2024 ASC',
         'rank_2024_desc' => '(ranking_2024 IS NULL OR ranking_2024 <= 0), ranking_2024 DESC',
+        'rank_2024_nearest' => '',
         'rank_2023_asc' => '(ranking_2023 IS NULL OR ranking_2023 <= 0), ranking_2023 ASC',
         'rank_2023_desc' => '(ranking_2023 IS NULL OR ranking_2023 <= 0), ranking_2023 DESC',
+        'rank_2023_nearest' => '',
         'score_2025_desc' => 'score_2025 IS NULL, score_2025 DESC',
         'score_2025_asc' => 'score_2025 IS NULL, score_2025 ASC',
         'score_2026_desc' => 'score_2026 IS NULL, score_2026 DESC',
@@ -78,6 +82,13 @@ final class UniversityRepository
             $ranking2024,
             $ranking2023,
         );
+        $orderSql = self::SORTS[$sort];
+        if (str_ends_with($sort, '_nearest')) {
+            $targetRank = $this->positiveInt($filters['target_rank'] ?? null, 'target_rank');
+            $orderSql = '(' . $rankFilterColumn . ' IS NULL OR ' . $rankFilterColumn . ' <= 0), '
+                . 'ABS(CAST(' . $rankFilterColumn . ' AS SIGNED) - ' . $targetRank . ') ASC, '
+                . $rankFilterColumn . ' ASC';
+        }
         [$where, $params] = $this->buildFilters($filters, false, $rankFilterColumn);
         array_unshift($where, $this->latestProgramRowSql());
         $favoritesOnly = filter_var($filters['favorites_only'] ?? false, FILTER_VALIDATE_BOOL);
@@ -143,7 +154,7 @@ final class UniversityRepository
             . 'CASE WHEN u23.id IS NOT NULL THEN u23.quota ELSE u23_mapped.quota END AS quota_2023 '
             . 'FROM universities u' . $historyJoins
             . $favoriteJoin . $whereSql
-            . ' ORDER BY ' . self::SORTS[$sort] . ', u.id ASC LIMIT :limit OFFSET :offset';
+            . ' ORDER BY ' . $orderSql . ', u.id ASC LIMIT :limit OFFSET :offset';
         $statement = $this->pdo->prepare($sql);
         $this->bind($statement, $params);
         $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -184,6 +195,28 @@ final class UniversityRepository
         $row = $statement->fetch();
 
         return $row ?: null;
+    }
+
+    public function findWithHistory(int $id, ?string $firebaseUid = null): ?array
+    {
+        $current = $this->find($id, $firebaseUid);
+        if ($current === null) {
+            return null;
+        }
+        $result = $this->paginate([
+            'page' => 1,
+            'limit' => 100,
+            'sort' => 'rank_2026_asc',
+            'university' => [(string) $current['university_name']],
+            'department' => [(string) $current['department_name']],
+        ], $firebaseUid);
+        foreach ($result['items'] as $program) {
+            if ((string) $program['program_code'] === (string) $current['program_code']) {
+                return $program;
+            }
+        }
+
+        return null;
     }
 
     public function filters(): array
