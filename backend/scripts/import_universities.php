@@ -208,6 +208,7 @@ function rowsEquivalent(array $incoming, array $existing): bool
 $filePath = $argv[1] ?? '';
 $mode = 'dry-run';
 $expectedYear = 2026;
+$production = false;
 foreach (array_slice($argv, 2) as $argument) {
     if ($argument === '--dry-run') {
         $mode = 'dry-run';
@@ -215,12 +216,14 @@ foreach (array_slice($argv, 2) as $argument) {
         $mode = 'apply';
     } elseif (str_starts_with($argument, '--year=')) {
         $expectedYear = (int) substr($argument, strlen('--year='));
+    } elseif ($argument === '--production') {
+        $production = true;
     } else {
         throw new RuntimeException('Bilinmeyen seçenek: ' . $argument);
     }
 }
 if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
-    fwrite(STDERR, "Kullanım: php scripts/import_universities.php <csv> [--dry-run|--apply] --year=2026\n");
+    fwrite(STDERR, "Kullanım: php scripts/import_universities.php <csv> [--dry-run|--apply] --year=2026 [--production]\n");
     exit(1);
 }
 if ($expectedYear !== 2026) {
@@ -280,11 +283,22 @@ try {
     $root = dirname(__DIR__);
     Dotenv::createImmutable($root)->safeLoad();
     $env = new Env($_ENV);
-    if ($env->appEnv() !== 'local'
-        || !in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)
-        || $env->instanceConnectionName() !== null
-        || $env->dbName() !== 'dersrotasi') {
-        throw new RuntimeException('Import yalnız local dersrotasi veritabanında çalışabilir.');
+    $localTarget = $env->appEnv() === 'local'
+        && in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)
+        && $env->instanceConnectionName() === null
+        && $env->dbName() === 'dersrotasi';
+    $productionTarget = $production
+        && $env->appEnv() === 'production'
+        && $env->instanceConnectionName() !== null
+        && $env->dbName() === 'dersrotasi'
+        && filter_var(getenv('ALLOW_PRODUCTION_DATA_IMPORT') ?: 'false', FILTER_VALIDATE_BOOL);
+    if (!$localTarget && !$productionTarget) {
+        throw new RuntimeException('Import hedefi güvenli local DB veya açıkça onaylanmış production Cloud SQL olmalıdır.');
+    }
+    if ($productionTarget
+        && $mode === 'apply'
+        && getenv('PRODUCTION_DATA_IMPORT_CONFIRMATION') !== 'dersrotasi-db:2026') {
+        throw new RuntimeException('Production 2026 apply confirmation değeri eksik veya hatalı.');
     }
     $pdo = Connection::make($env);
     $before = protectedSnapshot($pdo);

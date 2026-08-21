@@ -32,9 +32,9 @@ function historicalUsage(int $code = 1): never
         '  php scripts/import_yokatlas_historical.php 2023 2024 --apply',
         '  php scripts/import_yokatlas_historical.php 2023 2024 --apply --resume',
         '',
-        'Seçenekler: --dry-run --apply --yes --resume --limit=N --delay-ms=N',
+        'Seçenekler: --dry-run --apply --yes --resume --production --limit=N --delay-ms=N',
         '            --program-code=KOD --guide-year=YYYY --help',
-        'Varsayılan mod dry-run; apply yalnızca local DB ve 2023/2024 için çalışır.',
+        'Varsayılan mod dry-run; production için ayrıca açık job onayı gerekir.',
     ]) . PHP_EOL);
     exit($code);
 }
@@ -104,6 +104,7 @@ $options = [
     'delay_ms' => 1000,
     'program_code' => null,
     'guide_year' => (int) date('Y'),
+    'production' => false,
 ];
 $years = [];
 
@@ -127,6 +128,10 @@ try {
         }
         if ($argument === '--resume') {
             $options['resume'] = true;
+            continue;
+        }
+        if ($argument === '--production') {
+            $options['production'] = true;
             continue;
         }
         if (($value = historicalOptionValue($argument, 'limit')) !== null) {
@@ -183,16 +188,22 @@ try {
     $root = dirname(__DIR__);
     Dotenv::createImmutable($root)->safeLoad();
     $env = new Env($_ENV);
-    if ($options['apply']) {
-        if ($env->appEnv() !== 'local') {
-            throw new RuntimeException('Apply yalnızca APP_ENV=local ortamında çalışır.');
-        }
-        if (!in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)) {
-            throw new RuntimeException('Apply yalnızca localhost veritabanında çalışır.');
-        }
-        if ($env->instanceConnectionName() !== null) {
-            throw new RuntimeException('Cloud SQL instance bağlantısı tanımlıyken apply reddedildi.');
-        }
+    $localTarget = $env->appEnv() === 'local'
+        && in_array($env->dbHost(), ['127.0.0.1', 'localhost'], true)
+        && $env->instanceConnectionName() === null;
+    $productionTarget = $options['production']
+        && $env->appEnv() === 'production'
+        && $env->instanceConnectionName() !== null
+        && $env->dbName() === 'dersrotasi'
+        && filter_var(getenv('ALLOW_PRODUCTION_DATA_IMPORT') ?: 'false', FILTER_VALIDATE_BOOL);
+    if (!$localTarget && !$productionTarget) {
+        throw new RuntimeException('Import hedefi güvenli local DB veya açıkça onaylanmış production Cloud SQL olmalıdır.');
+    }
+    if ($productionTarget
+        && $options['apply']
+        && (!$options['yes']
+            || getenv('PRODUCTION_DATA_IMPORT_CONFIRMATION') !== 'dersrotasi-db:2023-2024')) {
+        throw new RuntimeException('Production historical apply için --yes ve doğru confirmation değeri gerekir.');
     }
 
     $pdo = Connection::make($env);
