@@ -22,10 +22,10 @@ const ENUMS = [
     'scholarship_type' => ['ucretsiz', 'burslu', 'yuzde_50', 'yuzde_25', 'ucretli', 'diger'],
 ];
 const IMPORT_FIELDS = [
-    'program_code', 'identity_hash', 'university_name', 'faculty_name', 'department_name',
+    'program_code', 'university_name', 'faculty_name', 'department_name',
     'city', 'university_type', 'score_type', 'education_type', 'education_language',
     'scholarship_type', 'base_score', 'base_rank', 'rank_source_name', 'rank_source_url',
-    'quota', 'placed_count', 'duration_years', 'year', 'source_year', 'source_name', 'source_url',
+    'quota', 'placed_count', 'duration_years', 'year', 'source_name', 'source_url',
 ];
 
 if (PHP_SAPI !== 'cli') {
@@ -134,7 +134,6 @@ function validatedRow(array $row, int $expectedYear): array
 
     return [
         'program_code' => $programCode,
-        'identity_hash' => hash('sha256', $programCode),
         'university_name' => requiredString($row, 'university_name'),
         'faculty_name' => trim((string) ($row['faculty_name'] ?? '')),
         'department_name' => requiredString($row, 'department_name'),
@@ -155,7 +154,6 @@ function validatedRow(array $row, int $expectedYear): array
         'placed_count' => nullableInteger($row, 'placed_count'),
         'duration_years' => nullableInteger($row, 'duration_years', 20),
         'year' => $year,
-        'source_year' => $year,
         'source_name' => $sourceName,
         'source_url' => $sourceUrl,
     ];
@@ -313,15 +311,15 @@ try {
     $find = $pdo->prepare('SELECT * FROM universities WHERE year = :year AND program_code = :program_code LIMIT 1');
     $insert = $pdo->prepare(<<<'SQL'
 INSERT INTO universities (
-  program_code, identity_hash, university_name, faculty_name, department_name, city,
+  program_code, university_name, faculty_name, department_name, city,
   university_type, score_type, education_type, education_language, scholarship_type,
   base_score, base_rank, rank_source_name, rank_source_url, rank_updated_at,
-  quota, placed_count, duration_years, year, source_year, source_name, source_url
+  quota, placed_count, duration_years, year, source_name, source_url
 ) VALUES (
-  :program_code, :identity_hash, :university_name, :faculty_name, :department_name, :city,
+  :program_code, :university_name, :faculty_name, :department_name, :city,
   :university_type, :score_type, :education_type, :education_language, :scholarship_type,
   :base_score, :base_rank, :rank_source_name, :rank_source_url, :rank_updated_at,
-  :quota, :placed_count, :duration_years, :year, :source_year, :source_name, :source_url
+  :quota, :placed_count, :duration_years, :year, :source_name, :source_url
 )
 SQL);
 
