@@ -136,7 +136,15 @@ gcloud run services update dersrotasi-backend \
 
 Anahtar döndürüldüğünde Secret Manager'a yeni version ekleyin ve Cloud Run servisini yeni sayısal version'a güncelleyin. Eski version'ı ancak yeni revision doğrulandıktan sonra devre dışı bırakın.
 
-Kaynaklar: [OpenAI production API key önerileri](https://developers.openai.com/api/docs/guides/production-best-practices#api-keys), [Cloud Run secret yapılandırması](https://cloud.google.com/run/docs/configuring/services/secrets), [Secret Manager'a version ekleme](https://cloud.google.com/secret-manager/docs/add-secret-version).
+### AI Asistan güvenlik katmanları
+
+`POST /api/ai/chat` yalnızca system prompt'a güvenmez. Backend, kullanıcı mesajını ana modele göndermeden önce normalize edilmiş deterministik kurallar ve OpenAI'nin standalone moderation endpoint'i ile inceler. İstek `allowed_education`, `allowed_smalltalk`, `allowed_general`, `unsafe`, `prompt_injection` veya `sensitive_personal_data` kategorilerinden birine ayrılır. Zararsız genel sorular kısa biçimde yanıtlanabilir; injection, hassas veri ve unsafe mesajlar ana eğitim modeline gönderilmez.
+
+Sohbet geçmişindeki unsafe, injection, hassas veri veya iç bilgi sızdıran mesajlar modele gönderilmeden temizlenir. Model çıktısı da kullanıcıya dönmeden önce safety, scope ve secret/internal bilgi kontrolünden geçer. Moderation kontrolü çalışmazsa istek fail-closed davranışla güvenli bir `503` hatası döndürür ve kullanım rezervasyonu geri alınır. Güvenlik loglarında mesaj içeriği yerine yalnızca olay kategorisi ve kısaltılmış hash kimliği tutulur.
+
+Moderation modeli `OPENAI_MODERATION_MODEL` ile ayarlanır ve varsayılanı resmî dokümantasyondaki `omni-moderation-latest` değeridir. `AI_ENABLED=false` (geriye uyumluluk için `AI_CHAT_ENABLED=false` da desteklenir) server-side kill switch olarak tüm AI sohbetini frontend deploy gerektirmeden kapatır.
+
+Kaynaklar: [OpenAI moderation rehberi](https://developers.openai.com/api/docs/guides/moderation), [OpenAI production API key önerileri](https://developers.openai.com/api/docs/guides/production-best-practices#api-keys), [Cloud Run secret yapılandırması](https://cloud.google.com/run/docs/configuring/services/secrets), [Secret Manager'a version ekleme](https://cloud.google.com/secret-manager/docs/add-secret-version).
 
 ## Endpointler
 

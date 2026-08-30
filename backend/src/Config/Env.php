@@ -130,6 +130,12 @@ final class Env
         );
     }
 
+    public function openAiModerationModel(): string
+    {
+        return trim($this->get('OPENAI_MODERATION_MODEL', 'omni-moderation-latest'))
+            ?: 'omni-moderation-latest';
+    }
+
     public function aiFreeDailyRequests(): int
     {
         return $this->positiveInt('AI_FREE_DAILY_REQUESTS', 5, 1, 1000);

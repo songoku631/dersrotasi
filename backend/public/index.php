@@ -6,7 +6,10 @@ use DersRotasi\AI\AiChatService;
 use DersRotasi\AI\AiChatValidator;
 use DersRotasi\AI\AiConversationRepository;
 use DersRotasi\AI\AiIntent;
+use DersRotasi\AI\AiResponseEnvelope;
+use DersRotasi\AI\AiSecurityGuard;
 use DersRotasi\AI\LazyAiGroundingProvider;
+use DersRotasi\AI\OpenAiModerationClient;
 use DersRotasi\AI\OpenAiResponsesClient;
 use DersRotasi\AI\PdoAiUsageStore;
 use DersRotasi\AI\PdoRateLimitStore;
@@ -324,6 +327,9 @@ try {
         );
         $plan = $planService->forUid($firebaseUid);
         $validated = (new AiChatValidator())->validate($body, $plan['limits']['max_message_chars']);
+        if (!$env->aiChatEnabled()) {
+            throw new RuntimeException('AI Asistan kısa süreliğine kullanılamıyor.', 503);
+        }
         $inputCharacters = strlen($validated['message']);
         foreach ($validated['history'] as $historyItem) {
             $inputCharacters += strlen($historyItem['content']);
@@ -344,13 +350,19 @@ try {
             $env->aiGlobalDailyTokenBudget(),
             !$plan['is_admin']
         );
+        $responseEnvelope = new AiResponseEnvelope();
         if ($reservation['state'] === 'completed') {
-            $cachedResponse = $reservation['response'];
+            $opened = $responseEnvelope->open(
+                $reservation['response'],
+                $conversationId,
+                $validated['message']
+            );
+            $cachedResponse = $opened['response'];
             $cachedResponse['conversation'] = $conversationRepository->appendExchange(
                 $userKeyHash,
                 $conversationId,
                 $requestIdHash,
-                $validated['message'],
+                $opened['storage_message'],
                 $cachedResponse
             );
             JsonResponse::send($cachedResponse);
@@ -359,16 +371,6 @@ try {
         $rateIdentifier = 'uid:' . $firebaseUid;
         try {
             (new RateLimiter(new PdoRateLimitStore($db())))->hit($rateIdentifier);
-
-            if (!$env->aiChatEnabled()) {
-                throw new RuntimeException('Dersrotası AI şu anda devre dışı.', 503);
-            }
-            if ($env->openAiApiKey() === '') {
-                throw new RuntimeException(
-                    'Dersrotası AI henüz yapılandırılmadı: OPENAI_API_KEY eksik.',
-                    503
-                );
-            }
 
             $intent = new AiIntent();
             $service = new AiChatService(
@@ -383,6 +385,12 @@ try {
                     null,
                     $env->aiMaxOutputTokens()
                 ),
+                new AiSecurityGuard(new OpenAiModerationClient(
+                    $env->openAiApiKey(),
+                    $env->openAiModerationModel(),
+                    $env->openAiTimeout(),
+                    $env->sslCaBundle()
+                )),
                 $env->aiChatEnabled()
             );
             $response = $service->chat(
@@ -392,17 +400,24 @@ try {
             );
             $actualTokens = (int) ($response['meta']['usage']['total_tokens'] ?? 0);
             $response['meta']['plan'] = $plan['plan'];
+            $response = $responseEnvelope->seal(
+                $response,
+                $conversationId,
+                $validated['message']
+            );
             $response = $usageStore->complete(
                 $userKeyHash,
                 $requestIdHash,
                 $actualTokens,
                 $response
             );
+            $opened = $responseEnvelope->open($response, $conversationId, $validated['message']);
+            $response = $opened['response'];
             $response['conversation'] = $conversationRepository->appendExchange(
                 $userKeyHash,
                 $conversationId,
                 $requestIdHash,
-                $validated['message'],
+                $opened['storage_message'],
                 $response
             );
             JsonResponse::send($response);
