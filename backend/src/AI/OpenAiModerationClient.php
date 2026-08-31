@@ -10,7 +10,7 @@ use GuzzleHttp\Exception\GuzzleException;
 use RuntimeException;
 use Throwable;
 
-final class OpenAiModerationClient implements AiContentModerator
+final class OpenAiModerationClient implements AiContentModerator, ImageContentModerator
 {
     public function __construct(
         private readonly string $apiKey,
@@ -22,6 +22,22 @@ final class OpenAiModerationClient implements AiContentModerator
     }
 
     public function inspect(string $content): array
+    {
+        return $this->request($content);
+    }
+
+    public function inspectImage(string $mimeType, string $bytes): array
+    {
+        if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true) || $bytes === '') {
+            throw new RuntimeException('AI güvenlik kontrolü geçici olarak kullanılamıyor.', 503);
+        }
+        return $this->request([[
+            'type' => 'image_url',
+            'image_url' => ['url' => 'data:' . $mimeType . ';base64,' . base64_encode($bytes)],
+        ]]);
+    }
+
+    private function request(string|array $input): array
     {
         if (trim($this->apiKey) === '') {
             throw new RuntimeException('AI güvenlik kontrolü geçici olarak kullanılamıyor.', 503);
@@ -41,7 +57,7 @@ final class OpenAiModerationClient implements AiContentModerator
                 ],
                 'json' => [
                     'model' => $this->model,
-                    'input' => $content,
+                    'input' => $input,
                 ],
             ]);
         } catch (GuzzleException $exception) {

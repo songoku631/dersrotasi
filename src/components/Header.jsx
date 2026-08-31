@@ -2,6 +2,7 @@ import { ChevronDown, LogIn, Menu, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
+import { getProfile, profileMediaUrl } from '../api/client'
 import { toolMenuItems } from '../data/tools'
 import Logo from './brand/Logo'
 import Button from './Button'
@@ -11,6 +12,7 @@ import UserAvatar from './user/UserAvatar'
 function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [profile, setProfile] = useState(null)
   const userMenuRef = useRef(null)
   const location = useLocation()
   const navigate = useNavigate()
@@ -31,6 +33,17 @@ function Header() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (!user) { setProfile(null); return undefined }
+    let active = true
+    const loadProfile = () => getProfile(user).then((response) => {
+      if (active) setProfile(response.profile || null)
+    }).catch(() => {})
+    loadProfile()
+    window.addEventListener('dersrotasi:profile-updated', loadProfile)
+    return () => { active = false; window.removeEventListener('dersrotasi:profile-updated', loadProfile) }
+  }, [user])
 
   async function handleLogout() {
     await logout()
@@ -82,8 +95,8 @@ function Header() {
 
         <div className="site-header__actions">
           {!authLoading && !isAuthenticated ? (
-            <Button to="/giris" icon={LogIn} variant="secondary">
-              Google ile Giriş
+            <Button to="/login" icon={LogIn} variant="secondary">
+              Giriş Yap / Kayıt Ol
             </Button>
           ) : null}
 
@@ -96,8 +109,8 @@ function Header() {
                 type="button"
                 onClick={() => setIsUserMenuOpen((current) => !current)}
               >
-                <UserAvatar user={user} size={34} />
-                <span>{user.displayName || 'Profilim'}</span>
+                <UserAvatar profile={profile} profilePhotoUrl={profileMediaUrl(profile?.profile_photo_path)} user={user} size={34} />
+                <span>{profile?.username || user.displayName || 'Profilim'}</span>
                 <ChevronDown aria-hidden="true" size={16} />
               </button>
               <div
@@ -138,14 +151,14 @@ function Header() {
           {!authLoading && isAuthenticated ? (
             <div className="mobile-user-links">
               <div className="mobile-user-links__profile">
-                <UserAvatar user={user} size={38} />
-                {user?.displayName ? <strong>{user.displayName}</strong> : null}
+                <UserAvatar profile={profile} profilePhotoUrl={profileMediaUrl(profile?.profile_photo_path)} user={user} size={38} />
+                <strong>{profile?.username || user?.displayName || 'Profilim'}</strong>
               </div>
               {renderUserLinks()}
             </div>
           ) : (
-            <Button to="/giris" icon={LogIn} variant="primary">
-              Google ile Giriş
+            <Button to="/login" icon={LogIn} variant="primary">
+              Giriş Yap / Kayıt Ol
             </Button>
           )}
         </Container>

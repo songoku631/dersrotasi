@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, OAuthProvider } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,6 +15,7 @@ const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean)
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null
 const auth = app ? getAuth(app) : null
 const googleProvider = auth ? new GoogleAuthProvider() : null
+const appleProvider = auth ? new OAuthProvider('apple.com') : null
 
 if (googleProvider) {
   googleProvider.setCustomParameters({
@@ -22,4 +23,9 @@ if (googleProvider) {
   })
 }
 
-export { app, auth, googleProvider, isFirebaseConfigured }
+if (appleProvider) {
+  appleProvider.addScope('email')
+  appleProvider.addScope('name')
+}
+
+export { app, appleProvider, auth, googleProvider, isFirebaseConfigured }

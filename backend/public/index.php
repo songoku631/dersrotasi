@@ -9,6 +9,7 @@ use DersRotasi\AI\AiIntent;
 use DersRotasi\AI\AiResponseEnvelope;
 use DersRotasi\AI\AiSecurityGuard;
 use DersRotasi\AI\LazyAiGroundingProvider;
+use DersRotasi\AI\LocalImageModerationFallback;
 use DersRotasi\AI\OpenAiModerationClient;
 use DersRotasi\AI\OpenAiResponsesClient;
 use DersRotasi\AI\PdoAiUsageStore;
@@ -30,6 +31,7 @@ use DersRotasi\Services\FirebaseTokenVerifier;
 use DersRotasi\Services\OfficialYksRankBandService;
 use DersRotasi\Services\PremiumAiSummaryService;
 use DersRotasi\Services\PremiumAnalysisService;
+use DersRotasi\Services\ProfilePhotoStorage;
 use DersRotasi\Services\StudyPlanGenerationService;
 use DersRotasi\Services\PreferenceEvaluationService;
 use DersRotasi\Services\YksBacktestConfidenceService;
@@ -220,6 +222,33 @@ try {
             'success' => true,
             'message' => 'Profil bilgileri kaydedildi.',
             'profile' => $repository->save($firebaseUser['uid'], $request->json()),
+        ]);
+    }
+
+    if ($method === 'POST' && $path === '/api/profile/photo') {
+        $firebaseUser = $authenticate();
+        $repository = new ProfileRepository($db());
+        $current = $repository->findByUid($firebaseUser['uid']);
+        $imageModerator = new OpenAiModerationClient(
+            $env->openAiApiKey(),
+            $env->openAiModerationModel(),
+            $env->openAiTimeout(),
+            $env->sslCaBundle()
+        );
+        if ($env->appEnv() === 'local') {
+            $imageModerator = new LocalImageModerationFallback($imageModerator);
+        }
+        $photoPath = (new ProfilePhotoStorage(
+            $root,
+            $imageModerator
+        ))->store(
+            $_FILES['photo'] ?? [],
+            $current['profile_photo_path'] ?? null
+        );
+        JsonResponse::send([
+            'success' => true,
+            'message' => 'Profil fotoğrafı güncellendi.',
+            'profile' => $repository->updatePhotoPath($firebaseUser['uid'], $photoPath),
         ]);
     }
 

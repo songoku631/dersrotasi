@@ -4,6 +4,12 @@ function apiUrl(path) {
   return `${apiBaseUrl}/${String(path).replace(/^\/+/, '')}`
 }
 
+export function profileMediaUrl(path) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return apiUrl(path)
+}
+
 function errorMessageForStatus(status, responseMessage) {
   if (status === 401) return responseMessage || 'Oturum doğrulanamadı. Lütfen yeniden giriş yap.'
   if (status === 403) return 'Bu işlem için yetkin bulunmuyor.'
@@ -89,4 +95,28 @@ export function getProfile(user, signal) {
 
 export function saveProfile(user, profile, signal) {
   return apiRequest('/api/profile', { user, auth: true, method: 'PUT', body: profile, signal })
+}
+
+export function saveUsername(user, username, signal) {
+  return saveProfile(user, { username }, signal)
+}
+
+export async function uploadProfilePhoto(user, file) {
+  if (!user) throw new Error('Bu işlem için giriş yapmalısın.')
+  const token = await user.getIdToken()
+  const form = new FormData()
+  form.append('photo', file)
+  let response
+  try {
+    response = await fetch(apiUrl('/api/profile/photo'), {
+      method: 'POST',
+      body: form,
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  } catch {
+    throw new Error('Sunucuya ulaşılamıyor. Lütfen tekrar dene.')
+  }
+  const data = await parseResponse(response)
+  if (!response.ok) throw new Error(errorMessageForStatus(response.status, data.message))
+  return data
 }

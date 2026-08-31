@@ -1,11 +1,16 @@
 import {
+  createUserWithEmailAndPassword,
   onIdTokenChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updateProfile,
 } from 'firebase/auth'
 import { useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './AuthContextObject'
 import {
+  appleProvider,
   auth,
   googleProvider,
   isFirebaseConfigured,
@@ -31,6 +36,21 @@ function getAuthErrorMessage(error) {
 
   if (code === 'auth/network-request-failed') {
     return 'Ağ bağlantısı nedeniyle giriş tamamlanamadı. Lütfen bağlantını kontrol et.'
+  }
+
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+    return 'E-posta veya şifre hatalı.'
+  }
+
+  if (code === 'auth/email-already-in-use') return 'Bu e-posta adresiyle zaten bir hesap var.'
+  if (code === 'auth/invalid-email') return 'Geçerli bir e-posta adresi gir.'
+  if (code === 'auth/weak-password') return 'Şifre en az 6 karakter olmalıdır.'
+  if (code === 'auth/too-many-requests') return 'Çok fazla deneme yapıldı. Lütfen biraz sonra tekrar dene.'
+  if (code === 'auth/operation-not-allowed') {
+    return 'Bu giriş yöntemi Firebase projesinde henüz etkin değil. Yönetici ayarları tamamlamalı.'
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'Bu e-posta başka bir giriş yöntemiyle kayıtlı. Önce o yöntemle giriş yap.'
   }
 
   return 'İşlem sırasında bir hata oluştu. Lütfen tekrar dene.'
@@ -81,6 +101,59 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function loginWithApple() {
+    setError('')
+    if (!auth || !appleProvider) {
+      setError(missingConfigMessage)
+      throw new Error(missingConfigMessage)
+    }
+    try {
+      return (await signInWithPopup(auth, appleProvider)).user
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  async function loginWithEmail(email, password) {
+    setError('')
+    if (!auth) throw new Error(missingConfigMessage)
+    try {
+      return (await signInWithEmailAndPassword(auth, email.trim(), password)).user
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  async function registerWithEmail(email, password, displayName) {
+    setError('')
+    if (!auth) throw new Error(missingConfigMessage)
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email.trim(), password)
+      await updateProfile(result.user, { displayName: displayName.trim() })
+      return result.user
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  async function resetPassword(email) {
+    setError('')
+    if (!auth) throw new Error(missingConfigMessage)
+    try {
+      await sendPasswordResetEmail(auth, email.trim())
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
   async function logout() {
     setError('')
 
@@ -105,8 +178,12 @@ export function AuthProvider({ children }) {
       error,
       isFirebaseConfigured,
       isAuthenticated: Boolean(user),
+      loginWithApple,
+      loginWithEmail,
       loginWithGoogle,
       logout,
+      registerWithEmail,
+      resetPassword,
       user,
     }),
     [authLoading, error, user],

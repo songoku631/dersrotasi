@@ -233,6 +233,24 @@ securityCheck($requests[0]['request']->getUri()->getPath() === '/v1/moderations'
 $moderationPayload = json_decode((string) $requests[0]['request']->getBody(), true);
 securityCheck($moderationPayload['model'] === 'omni-moderation-latest', 'Moderation model yapılandırması gönderilmedi.');
 
+$imageRequests = [];
+$imageHandler = HandlerStack::create(new MockHandler([
+    new Response(200, ['Content-Type' => 'application/json'], json_encode([
+        'results' => [['flagged' => false, 'categories' => ['sexual' => false, 'violence/graphic' => false]]],
+    ], JSON_THROW_ON_ERROR)),
+]));
+$imageHandler->push(Middleware::history($imageRequests));
+$imageResult = (new OpenAiModerationClient(
+    'test-key', 'omni-moderation-latest', 5, null, new Client(['handler' => $imageHandler])
+))->inspectImage('image/jpeg', 'safe-image-bytes');
+securityCheck($imageResult === ['flagged' => false, 'categories' => []], 'Görsel moderation cevabı hatalı parse edildi.');
+$imagePayload = json_decode((string) $imageRequests[0]['request']->getBody(), true);
+securityCheck($imagePayload['input'][0]['type'] === 'image_url', 'Görsel moderation input tipi yanlış.');
+securityCheck(
+    $imagePayload['input'][0]['image_url']['url'] === 'data:image/jpeg;base64,' . base64_encode('safe-image-bytes'),
+    'Görsel moderation data URL içeriği yanlış.'
+);
+
 $invalidHandler = HandlerStack::create(new MockHandler([
     new Response(200, ['Content-Type' => 'application/json'], '{"results":[]}'),
 ]));

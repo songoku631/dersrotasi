@@ -1,83 +1,60 @@
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
-import GoogleLoginButton from '../components/auth/GoogleLoginButton'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import Logo from '../components/brand/Logo'
-import Container from '../components/Container'
 import { useAuth } from '../context/useAuth'
 
 function Login() {
-  const { authLoading, error, loginWithGoogle, user } = useAuth()
-  const [isSigningIn, setIsSigningIn] = useState(false)
+  const location = useLocation()
+  const { authLoading, error, loginWithApple, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState('')
   const [localError, setLocalError] = useState('')
+  const [message, setMessage] = useState('')
 
-  if (authLoading) {
-    return (
-      <section className="auth-loading" aria-live="polite">
-        <div>
-          <span className="auth-loading__mark"></span>
-          <p>Oturumun doğrulanıyor...</p>
-        </div>
-      </section>
-    )
+  if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
+  if (user) return <Navigate replace to="/kullanici-adi" />
+
+  async function run(action, name) {
+    setBusy(name); setLocalError(''); setMessage('')
+    try { await action() } catch (requestError) { setLocalError(requestError.message) } finally { setBusy('') }
   }
 
-  if (user) {
-    return <Navigate to="/profil" replace />
+  function handleSubmit(event) {
+    event.preventDefault()
+    run(() => loginWithEmail(email, password), 'email')
   }
 
-  async function handleLogin() {
-    setIsSigningIn(true)
-    setLocalError('')
-
-    try {
-      await loginWithGoogle()
-    } catch (loginError) {
-      setLocalError(loginError.message)
-    } finally {
-      setIsSigningIn(false)
-    }
+  async function handleReset() {
+    if (!email.trim()) { setLocalError('Şifre sıfırlama bağlantısı için önce e-posta adresini gir.'); return }
+    await run(async () => {
+      await resetPassword(email)
+      setMessage('Şifre sıfırlama bağlantısı e-posta adresine gönderildi.')
+    }, 'reset')
   }
 
   return (
-    <section className="login-page">
-      <Container className="login-page__grid">
-        <div className="login-intro">
-          <Link className="back-link" to="/">
-            <ArrowLeft aria-hidden="true" size={18} />
-            Ana sayfaya dön
-          </Link>
-          <div className="login-brand">
-            <Logo to={null} />
-          </div>
-          <h1>Google hesabınla güvenli giriş yap.</h1>
-          <p>
-            Ders Rotası, kullanıcı doğrulamasını Google'ın güvenli giriş sistemi
-            üzerinden yapar. Gmail şifren Ders Rotası tarafından görülmez veya
-            saklanmaz.
-          </p>
+    <main className="auth-page">
+      <section className="auth-card" aria-labelledby="login-title">
+        <Link className="auth-brand" to="/" aria-label="Dersrotası ana sayfa"><Logo to={null} /></Link>
+        <div className="auth-heading"><h1 id="login-title">Dersrotası’na giriş yap</h1><p>Hedeflerine kaldığın yerden devam et.</p></div>
+        {location.state?.message ? <div className="success-alert"><p>{location.state.message}</p></div> : null}
+        {localError || error ? <div className="form-alert" role="alert"><p>{localError || error}</p></div> : null}
+        {message ? <div className="success-alert" role="status"><p>{message}</p></div> : null}
+        <div className="auth-socials">
+          <button disabled={Boolean(busy)} onClick={() => run(loginWithGoogle, 'google')} type="button"><span className="auth-provider auth-provider--google">G</span>{busy === 'google' ? 'Bağlanıyor...' : 'Google ile devam et'}</button>
+          <button disabled={Boolean(busy)} onClick={() => run(loginWithApple, 'apple')} type="button"><span className="auth-provider auth-provider--apple">●</span>{busy === 'apple' ? 'Bağlanıyor...' : 'Apple ile devam et'}</button>
         </div>
-
-        <div className="login-panel">
-          <ShieldCheck aria-hidden="true" size={34} />
-          <h2>Google ile Giriş Yap</h2>
-          <p>
-            Girişten sonra profilini düzenleyebilir, çalışma planı ve tercih
-            sayfalarına erişebilirsin.
-          </p>
-          {localError || error ? (
-            <div className="form-alert" role="alert">
-              <p>{localError || error}</p>
-            </div>
-          ) : null}
-          <GoogleLoginButton isLoading={isSigningIn} onClick={handleLogin} />
-          <p className="login-panel__note">
-            E-posta ve şifre bilgilerin Google tarafından doğrulanır; Ders Rotası
-            yalnızca temel profil bilgilerini alır.
-          </p>
-        </div>
-      </Container>
-    </section>
+        <div className="auth-divider"><span>veya</span></div>
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label><span>E-posta</span><input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label><span>Şifre</span><input autoComplete="current-password" minLength="6" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          <button className="auth-submit" disabled={Boolean(busy)} type="submit">{busy === 'email' ? 'Giriş yapılıyor...' : 'Giriş Yap'}</button>
+        </form>
+        <button className="auth-link-button" disabled={Boolean(busy)} onClick={handleReset} type="button">Şifremi unuttum</button>
+        <p className="auth-switch">Hesabın yok mu? <Link to="/kayit">Kayıt ol</Link></p>
+      </section>
+    </main>
   )
 }
 
