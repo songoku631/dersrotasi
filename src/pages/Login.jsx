@@ -1,19 +1,48 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
+import { getProfile } from '../api/client'
 import Logo from '../components/brand/Logo'
 import { useAuth } from '../context/useAuth'
+import { postLoginPath } from '../utils/authRouting'
 
 function Login() {
   const location = useLocation()
-  const { authLoading, error, loginWithApple, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
+  const { authLoading, error, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState('')
   const [localError, setLocalError] = useState('')
   const [message, setMessage] = useState('')
+  const [profileCheck, setProfileCheck] = useState({ destination: '', error: '', loading: false })
+  const [profileCheckAttempt, setProfileCheckAttempt] = useState(0)
+
+  useEffect(() => {
+    if (!user) {
+      setProfileCheck({ destination: '', error: '', loading: false })
+      return undefined
+    }
+
+    const controller = new AbortController()
+    setProfileCheck({ destination: '', error: '', loading: true })
+    getProfile(user, controller.signal)
+      .then((response) => setProfileCheck({
+        destination: postLoginPath(response.profile, location.state?.from?.pathname),
+        error: '',
+        loading: false,
+      }))
+      .catch((requestError) => {
+        if (requestError.name !== 'AbortError') {
+          setProfileCheck({ destination: '', error: requestError.message, loading: false })
+        }
+      })
+
+    return () => controller.abort()
+  }, [location.state, profileCheckAttempt, user])
 
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
-  if (user) return <Navigate replace to="/kullanici-adi" />
+  if (user && profileCheck.destination) return <Navigate replace state={location.state?.aiPrompt ? { aiPrompt: location.state.aiPrompt } : undefined} to={profileCheck.destination} />
+  if (user && (profileCheck.loading || !profileCheck.error)) return <div className="auth-loading"><p>Profilin kontrol ediliyor...</p></div>
+  if (user && profileCheck.error) return <main className="auth-page"><section className="auth-card auth-card--compact"><div className="form-alert" role="alert"><p>{profileCheck.error}</p></div><button className="auth-submit" onClick={() => setProfileCheckAttempt((attempt) => attempt + 1)} type="button">Tekrar Dene</button></section></main>
 
   async function run(action, name) {
     setBusy(name); setLocalError(''); setMessage('')
@@ -43,7 +72,6 @@ function Login() {
         {message ? <div className="success-alert" role="status"><p>{message}</p></div> : null}
         <div className="auth-socials">
           <button disabled={Boolean(busy)} onClick={() => run(loginWithGoogle, 'google')} type="button"><span className="auth-provider auth-provider--google">G</span>{busy === 'google' ? 'Bağlanıyor...' : 'Google ile devam et'}</button>
-          <button disabled={Boolean(busy)} onClick={() => run(loginWithApple, 'apple')} type="button"><span className="auth-provider auth-provider--apple">●</span>{busy === 'apple' ? 'Bağlanıyor...' : 'Apple ile devam et'}</button>
         </div>
         <div className="auth-divider"><span>veya</span></div>
         <form className="auth-form" onSubmit={handleSubmit}>

@@ -1123,6 +1123,167 @@ main {
   box-shadow: 0 10px 24px rgba(21, 36, 84, 0.1);
 }
 
+.home-ai {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(4.5rem, 9vw, 7.5rem) 0 4.5rem;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(109, 69, 216, 0.16), transparent 34%),
+    linear-gradient(180deg, #f8f7ff 0%, #ffffff 88%);
+}
+
+.home-ai::before {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.08);
+  content: '';
+  filter: blur(12px);
+  right: -180px;
+  top: -200px;
+}
+
+.home-ai__inner {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.home-ai__mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 1.1rem;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--navy), var(--purple));
+  box-shadow: 0 16px 34px rgba(81, 48, 173, 0.2);
+  color: #fff;
+}
+
+.home-ai__mark svg { width: 27px; height: 27px; }
+
+.home-ai h1 {
+  max-width: 850px;
+  margin: 0;
+  font-size: clamp(2.15rem, 5vw, 4rem);
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+}
+
+.home-ai__intro {
+  max-width: 650px;
+  margin: 1.15rem auto 2rem;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.14rem);
+}
+
+.home-ai__composer {
+  display: grid;
+  width: min(790px, 100%);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(109, 69, 216, 0.2);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(35, 30, 94, 0.13);
+  text-align: left;
+}
+
+.home-ai__composer:focus-within {
+  border-color: rgba(109, 69, 216, 0.55);
+  box-shadow: 0 26px 76px rgba(35, 30, 94, 0.17);
+}
+
+.home-ai__composer textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 0.85rem 0.9rem;
+  background: transparent;
+  color: var(--navy);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.home-ai__composer textarea::placeholder { color: #8993a8; }
+
+.home-ai__composer button {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--purple-dark), var(--purple));
+  box-shadow: 0 10px 24px rgba(81, 48, 173, 0.24);
+  color: #fff;
+  cursor: pointer;
+}
+
+.home-ai__composer button:disabled { box-shadow: none; cursor: not-allowed; opacity: 0.42; }
+.home-ai__composer button svg { width: 20px; height: 20px; }
+
+.home-ai__suggestions {
+  display: flex;
+  max-width: 820px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 1.15rem;
+}
+
+.home-ai__suggestions button {
+  padding: 0.52rem 0.78rem;
+  border: 1px solid #dfe4f2;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #45516a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.home-ai__suggestions button:hover { border-color: #b9ade9; color: var(--purple-dark); }
+
+.home-shortcuts { padding: 1rem 0 5.5rem; }
+.home-shortcuts__label { margin-bottom: 1rem; color: var(--muted); font-size: 0.8rem; font-weight: 850; text-transform: uppercase; }
+
+.home-shortcuts__grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.home-shortcut {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 0.85rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 1rem;
+  border-radius: 18px;
+  background: #f7f8fc;
+  color: inherit;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.home-shortcut:hover { background: #f0edff; transform: translateY(-2px); }
+.home-shortcut > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; background: #fff; color: var(--purple-dark); }
+.home-shortcut > span svg { width: 21px; height: 21px; }
+.home-shortcut div { display: grid; gap: 0.22rem; }
+.home-shortcut strong { color: var(--navy); }
+.home-shortcut small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.home-shortcut > svg { width: 18px; color: #929bb0; }
+
 .hero-section {
   overflow: hidden;
   padding: 5.5rem 0 4.5rem;
@@ -3399,6 +3560,8 @@ main {
     grid-template-columns: 1fr;
   }
 
+  .home-shortcuts__grid { grid-template-columns: 1fr; }
+
   .login-page__grid,
   .profile-layout,
   .university-layout {
@@ -3478,6 +3641,14 @@ main {
   .hero-section {
     padding: 3.6rem 0 3rem;
   }
+
+  .home-ai { padding: 3.5rem 0 3rem; }
+  .home-ai__composer { border-radius: 20px; }
+  .home-ai__composer textarea { min-height: 104px; padding: 0.65rem; font-size: 1rem; }
+  .home-ai__composer button { width: 46px; height: 46px; border-radius: 14px; }
+  .home-ai__suggestions { justify-content: flex-start; }
+  .home-ai__suggestions button { text-align: left; }
+  .home-shortcuts { padding-bottom: 3.5rem; }
 
   .hero-section__actions,
   .free-banner__inner,

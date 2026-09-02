@@ -35,8 +35,13 @@ try {
     assert((int) $profile['email_public'] === 0);
     assert((int) $profile['birth_year_public'] === 0);
 
+    $updatedUsername = 'updated_' . $suffix;
+    $updatedProfile = $repository->save($firstUid, ['username' => $updatedUsername]);
+    assert($updatedProfile['username'] === $updatedUsername);
+    assert($repository->findByUid($firstUid)['username'] === $updatedUsername);
+
     try {
-        $repository->save($secondUid, ['username' => $username]);
+        $repository->save($secondUid, ['username' => $updatedUsername]);
         throw new RuntimeException('Duplicate username was accepted.');
     } catch (RuntimeException $exception) {
         assert($exception->getCode() === 409);
