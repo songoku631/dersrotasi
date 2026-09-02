@@ -4,6 +4,7 @@ import { getCurrentUser, profileMediaUrl, saveProfile, uploadProfilePhoto } from
 import Button from '../components/Button'
 import Container from '../components/Container'
 import PageHeader from '../components/PageHeader'
+import ProfilePhotoCropModal from '../components/profile/ProfilePhotoCropModal'
 import UserAvatar from '../components/user/UserAvatar'
 import { useAuth } from '../context/useAuth'
 import { useUserPlan } from '../hooks/useUserPlan'
@@ -28,6 +29,7 @@ function ProfilePage() {
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [photoToCrop, setPhotoToCrop] = useState(null)
 
   const load = useCallback(async () => {
     if (!user) return
@@ -66,12 +68,16 @@ function ProfilePage() {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
       setError('JPEG, PNG veya WebP biçiminde en fazla 2 MB bir görsel seç.'); return
     }
+    setError(''); setMessage(''); setPhotoToCrop(file)
+  }
+
+  async function saveCroppedPhoto(file) {
     setStatus('uploading'); setError(''); setMessage('')
     try {
       const response = await uploadProfilePhoto(user, file)
       const next = { ...profile, ...response.profile }
-      setProfile(next); setDraft(next); setMessage('Profil fotoğrafın güncellendi.'); notifyProfileUpdated()
-    } catch (requestError) { setError(requestError.message) } finally { setStatus('ready') }
+      setProfile(next); setDraft(next); setPhotoToCrop(null); setMessage('Profil fotoğrafın güncellendi.'); notifyProfileUpdated()
+    } catch (requestError) { setError(requestError.message); throw requestError } finally { setStatus('ready') }
   }
 
   if (authLoading || status === 'loading') return <section className="auth-loading"><div><span className="auth-loading__mark" /><p>Profilin yükleniyor...</p></div></section>
@@ -142,6 +148,7 @@ function ProfilePage() {
         </div>
       </div>
     </Container></section>
+    {photoToCrop ? <ProfilePhotoCropModal file={photoToCrop} onCancel={() => setPhotoToCrop(null)} onSave={saveCroppedPhoto} /> : null}
   </>
 }
 

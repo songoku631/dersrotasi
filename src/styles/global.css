@@ -956,15 +956,19 @@ main {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
 }
 
 .logo__image {
   display: block;
   width: auto;
-  height: 48px;
+  height: 40px;
   max-width: 100%;
   object-fit: contain;
 }
+
+.logo__wordmark { color: var(--navy); font-size: 1.15rem; font-weight: 900; letter-spacing: -0.035em; }
 
 .desktop-nav,
 .site-header__actions,
@@ -1713,6 +1717,7 @@ main {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
 }
 
 .user-avatar--fallback {
@@ -1985,6 +1990,24 @@ main {
   padding: 0.65rem 0.9rem;
 }
 .profile-photo-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.profile-crop-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 1rem; background: rgba(8, 18, 48, 0.72); }
+.profile-crop-modal { width: min(100%, 520px); max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(5, 13, 35, 0.35); padding: 1.4rem; }
+.profile-crop-modal__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.profile-crop-modal__header h2 { margin-bottom: 0; }
+.profile-crop-modal__close { display: grid; width: 40px; height: 40px; flex: 0 0 40px; place-items: center; border: 0; border-radius: 999px; background: var(--surface-strong); color: var(--navy); cursor: pointer; }
+.profile-crop-stage { position: relative; width: min(280px, 100%); aspect-ratio: 1; margin: 1.15rem auto; overflow: hidden; border: 1px solid #8ea4c0; border-radius: 14px; background: #dbe4f2; cursor: grab; touch-action: none; user-select: none; }
+.profile-crop-stage:active { cursor: grabbing; }
+.profile-crop-stage canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.profile-crop-source { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.profile-crop-mask { position: absolute; inset: 0; border: 2px solid rgba(255,255,255,0.98); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(15,31,70,0.12), 0 0 0 90px rgba(9,20,48,0.48); pointer-events: none; }
+.profile-crop-controls { display: flex; align-items: end; gap: 1rem; }
+.profile-crop-controls label { display: grid; flex: 1; gap: 0.4rem; color: var(--navy); font-weight: 800; }
+.profile-crop-controls input { width: 100%; accent-color: var(--purple); }
+.profile-crop-reset { display: inline-flex; min-height: 38px; align-items: center; gap: 0.35rem; border: 0; background: transparent; color: var(--purple-dark); cursor: pointer; font-weight: 800; }
+.profile-crop-preview-row { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--muted); font-weight: 750; }
+.profile-crop-preview { width: 80px; height: 80px; flex: 0 0 80px; overflow: hidden; border: 3px solid var(--sky-soft); border-radius: 50%; background: #fff; }
+.profile-crop-preview canvas { display: block; width: 100%; height: 100%; }
+.profile-crop-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
 .profile-summary > small { margin-top: 0.45rem; color: var(--muted); }
 .profile-private-info { display: grid; width: 100%; gap: 0.2rem; margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 1rem; text-align: left; }
 .profile-private-info span, .profile-private-info small { color: var(--muted); }
@@ -2010,6 +2033,12 @@ main {
 @media (max-width: 560px) {
   .profile-details, .profile-form__grid { grid-template-columns: 1fr; }
   .profile-mode-header { align-items: flex-start; flex-direction: column; }
+  .profile-crop-backdrop { align-items: start; padding: 0.5rem; }
+  .profile-crop-modal { max-height: calc(100dvh - 1rem); padding: 1rem; }
+  .profile-crop-controls { align-items: stretch; flex-direction: column; gap: 0.5rem; }
+  .profile-crop-reset { align-self: flex-start; }
+  .profile-crop-preview-row { justify-content: space-between; }
+  .profile-crop-actions { flex-wrap: wrap; }
 }
 
 .profile-summary,
@@ -3441,8 +3470,10 @@ main {
   }
 
   .site-header .logo__image {
-    height: 40px;
+    height: 36px;
   }
+
+  .site-header .logo__wordmark { font-size: 1rem; }
 
   .hero-section {
     padding: 3.6rem 0 3rem;

@@ -1,15 +1,10 @@
 import { Link } from 'react-router-dom'
-import dersrotasiLogo from '../../assets/dersrotasi-logo.png'
-
 function Logo({ className = '', to = '/' }) {
   const content = (
-    <img
-      alt="DersRotası"
-      className="logo__image"
-      height="1254"
-      src={dersrotasiLogo}
-      width="1254"
-    />
+    <>
+      <img alt="" aria-hidden="true" className="logo__image" height="64" src="/favicon.svg" width="64" />
+      <span className="logo__wordmark">DersRotası</span>
+    </>
   )
 
   if (to) {
