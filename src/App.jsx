@@ -16,12 +16,16 @@ import StudyPlanPage from './pages/StudyPlanPage'
 import YksEstimatePage from './pages/YksEstimatePage'
 import UniversityPreferencePage from './pages/UniversityPreferencePage'
 import UniversityDetailPage from './pages/UniversityDetailPage'
+import PomodoroPage from './pages/PomodoroPage'
+import PomodoroRoomPage from './pages/PomodoroRoomPage'
 import { tools } from './data/tools'
 
 const placeholderRoutes = tools
   .filter(
     (tool) =>
-      tool.path !== '/yks-siralama-tahmini' && tool.path !== '/calisma-plani',
+      tool.path !== '/yks-siralama-tahmini'
+      && tool.path !== '/calisma-plani'
+      && tool.path !== '/pomodoro',
   )
   .map((tool) => ({
     path: tool.path,
@@ -60,6 +64,8 @@ function App() {
           <Route path="/favorilerim" element={<FavoritesPage />} />
           <Route path="/tercihlerim" element={<PreferencesPage />} />
           <Route path="/calisma-plani" element={<StudyPlanPage />} />
+          <Route path="/pomodoro" element={<PomodoroPage />} />
+          <Route path="/pomodoro/room/:roomId" element={<PomodoroRoomPage />} />
         </Route>
         <Route path="/giris" element={<Login />} />
         <Route path="/login" element={<Login />} />

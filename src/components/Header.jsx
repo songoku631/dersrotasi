@@ -89,6 +89,7 @@ function Header() {
           <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
+          <NavLink to="/pomodoro">Pomodoro Odaları</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
           {isAuthenticated ? <NavLink to="/premium">Premium</NavLink> : null}
         </nav>
@@ -147,6 +148,7 @@ function Header() {
           <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
+          <NavLink to="/pomodoro">Pomodoro Odaları</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
           {!authLoading && isAuthenticated ? (
             <div className="mobile-user-links">

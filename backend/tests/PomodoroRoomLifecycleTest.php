@@ -1,0 +1,46 @@
+<?php
+declare(strict_types=1);
+
+use DersRotasi\Config\Env;
+use DersRotasi\Database\Connection;
+use DersRotasi\Pomodoro\PomodoroRepository;
+use Dotenv\Dotenv;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+function lifecycleCheck(bool $value, string $message): void { if (!$value) throw new RuntimeException($message); }
+function lifecycleThrows(callable $callback, int $code, string $message): void { try { $callback(); } catch (RuntimeException $e) { lifecycleCheck($e->getCode()===$code && $e->getMessage()===$message, 'Beklenen lifecycle hatası alınamadı.'); return; } throw new RuntimeException('Beklenen lifecycle hatası oluşmadı.'); }
+
+$root=dirname(__DIR__); Dotenv::createImmutable($root)->safeLoad(); $env=new Env($_ENV);
+lifecycleCheck($env->appEnv()==='local','Test yalnız local ortamda çalışabilir.'); $pdo=Connection::make($env);
+$pdo->exec("CREATE TEMPORARY TABLE user_profiles (firebase_uid VARCHAR(128) PRIMARY KEY, username VARCHAR(24), profile_photo_path VARCHAR(255)) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_rooms (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,owner_uid VARCHAR(128) NOT NULL,name VARCHAR(80) NOT NULL,description VARCHAR(300) NOT NULL DEFAULT '',category VARCHAR(40) NOT NULL,visibility ENUM('public','private') NOT NULL DEFAULT 'public',room_code_hash VARCHAR(255),work_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 25,break_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 5,current_phase ENUM('idle','work','break','paused') NOT NULL DEFAULT 'idle',phase_before_pause ENUM('work','break'),phase_started_at DATETIME(3),phase_ends_at DATETIME(3),remaining_seconds INT UNSIGNED,cycle_number INT UNSIGNED NOT NULL DEFAULT 1,voice_enabled TINYINT(1) NOT NULL DEFAULT 0,music_enabled TINYINT(1) NOT NULL DEFAULT 0,max_members SMALLINT UNSIGNED NOT NULL DEFAULT 12,status ENUM('active','closed') NOT NULL DEFAULT 'active',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_room_members (room_id BIGINT UNSIGNED NOT NULL,user_uid VARCHAR(128) NOT NULL,joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,role ENUM('owner','member') NOT NULL DEFAULT 'member',status ENUM('active','left','kicked','blocked') NOT NULL DEFAULT 'active',microphone_enabled TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY(room_id,user_uid)) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_sessions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,room_id BIGINT UNSIGNED NOT NULL,user_uid VARCHAR(128) NOT NULL,started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,last_accounted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,ended_at DATETIME,focused_seconds INT UNSIGNED NOT NULL DEFAULT 0,completed_cycles INT UNSIGNED NOT NULL DEFAULT 0) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_music_queue (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,room_id BIGINT UNSIGNED NOT NULL,provider ENUM('youtube','spotify') NOT NULL,external_url VARCHAR(500) NOT NULL,external_id VARCHAR(100) NOT NULL,title VARCHAR(160) NOT NULL DEFAULT '',added_by_uid VARCHAR(128) NOT NULL,position INT UNSIGNED NOT NULL,started_at DATETIME(3),created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_rate_limits (action_key VARCHAR(190) PRIMARY KEY,attempts SMALLINT UNSIGNED NOT NULL DEFAULT 1,window_started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");
+$repo=new PomodoroRepository($pdo); $payload=['name'=>'Lifecycle','category'=>'TYT','work_minutes'=>25,'break_minutes'=>5,'max_members'=>12];
+$room=$repo->create('owner-a',$payload); $id=$room['id'];
+lifecycleCheck($room['is_owner']===true && $room['members'][0]['role']==='owner','Creator aktif owner olmalı.');
+lifecycleCheck((int)$pdo->query("SELECT COUNT(*) FROM pomodoro_room_members WHERE room_id={$id} AND user_uid='owner-a'")->fetchColumn()===1,'Creator üyeliği tekil olmalı.');
+$repo->join('guest-a',$id); $repo->join('guest-a',$id);
+lifecycleCheck((int)$pdo->query("SELECT COUNT(*) FROM pomodoro_room_members WHERE room_id={$id} AND user_uid='guest-a'")->fetchColumn()===1,'Refresh/join duplicate membership oluşturmamalı.');
+$repo->leave('owner-a',$id); $guestRoom=$repo->get('guest-a',$id);
+lifecycleCheck($guestRoom['is_owner']===true && $guestRoom['status']==='active','Host ayrıldığında aktif üyeye sahiplik devredilmeli.');
+$refreshRoom=$repo->create('refresh-owner',$payload); $refreshId=$refreshRoom['id'];
+$pdo->exec("UPDATE pomodoro_rooms SET created_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={$refreshId}");
+lifecycleCheck(count(array_filter($repo->list('viewer','all'),fn($r)=>$r['id']===$refreshId))===1,'Taze heartbeat bulunan oda kapanmamalı.');
+$emptyRoom=$repo->create('empty-owner',$payload); $emptyId=$emptyRoom['id']; $repo->leave('empty-owner',$emptyId);
+$pdo->exec("UPDATE pomodoro_rooms SET created_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={$emptyId}");
+$pdo->exec("UPDATE pomodoro_room_members SET last_seen_at=DATE_SUB(NOW(),INTERVAL 100 SECOND) WHERE room_id={$emptyId}");
+lifecycleCheck(count(array_filter($repo->list('viewer','all'),fn($r)=>$r['id']===$emptyId))===0,'Boş oda grace period sonunda listeden kalkmalı.');
+lifecycleThrows(fn()=>$repo->get('empty-owner',$emptyId),410,'Bu oda artık aktif değil.');
+lifecycleCheck(PomodoroRepository::EMPTY_ROOM_GRACE_SECONDS===90,'Grace period merkezi ve 90 saniye olmalı.');
+$protected=$repo->create('password-owner',[...$payload,'password_protected'=>true,'password'=>'dogru-sifre']); $protectedId=$protected['id'];
+$storedHash=$pdo->query("SELECT room_code_hash FROM pomodoro_rooms WHERE id={$protectedId}")->fetchColumn();
+lifecycleCheck($storedHash!=='dogru-sifre' && password_verify('dogru-sifre',$storedHash),'Şifre yalnız güvenli hash olarak saklanmalı.');
+lifecycleCheck($protected['password_protected']===true && !array_key_exists('room_code_hash',$protected) && !array_key_exists('password',$protected),'Şifre ve hash response içine sızmamalı.');
+lifecycleThrows(fn()=>$repo->join('wrong-password-user',$protectedId,'yanlis'),403,'Oda şifresi yanlış.');
+lifecycleCheck($repo->join('right-password-user',$protectedId,'dogru-sifre')['id']===$protectedId,'Doğru şifre kabul edilmeli.');
+$private=$repo->create('private-owner',[...$payload,'visibility'=>'private']);
+lifecycleCheck(count(array_filter($repo->list('viewer','all'),fn($r)=>$r['id']===$private['id']))===0,'Private oda keşif listesinde görünmemeli.');
+echo "PomodoroRoomLifecycleTest: OK\n";

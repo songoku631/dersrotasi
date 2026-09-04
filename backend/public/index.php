@@ -20,6 +20,7 @@ use DersRotasi\Database\Connection;
 use DersRotasi\Http\JsonResponse;
 use DersRotasi\Http\Request;
 use DersRotasi\Middleware\FirebaseAuthMiddleware;
+use DersRotasi\Pomodoro\PomodoroRepository;
 use DersRotasi\Repositories\FavoriteRepository;
 use DersRotasi\Repositories\PreferenceRepository;
 use DersRotasi\Repositories\ProfileRepository;
@@ -186,6 +187,34 @@ try {
             'service' => 'Ders Rotası API',
             'environment' => $env->appEnv(),
         ]);
+    }
+
+    if (str_starts_with($path, '/api/pomodoro')) {
+        $uid = $authenticate()['uid'];
+        $pomodoro = new PomodoroRepository($db());
+        if ($method === 'GET' && $path === '/api/pomodoro/rooms') {
+            $items = $pomodoro->list($uid, (string) ($_GET['filter'] ?? 'all'));
+            JsonResponse::send(['success' => true, 'data' => ['items' => $items, 'stats' => $pomodoro->stats($uid)]]);
+        }
+        if ($method === 'POST' && $path === '/api/pomodoro/rooms') {
+            JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->create($uid, $request->json())]], 201);
+        }
+        if ($method === 'GET' && $path === '/api/pomodoro/stats') {
+            JsonResponse::send(['success' => true, 'data' => $pomodoro->stats($uid)]);
+        }
+        if (preg_match('#^/api/pomodoro/rooms/(\d+)(?:/(join|leave|heartbeat|timer|music|music/action|signals|moderation))?$#', $path, $m)) {
+            $id = (int) $m[1]; $action = $m[2] ?? '';
+            if ($method === 'GET' && $action === '') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->get($uid, $id), 'server_now' => gmdate('c')]]);
+            if ($method === 'POST' && $action === 'join') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->join($uid, $id, (string) ($request->json()['password'] ?? ''))]]);
+            if ($method === 'POST' && $action === 'leave') { $pomodoro->leave($uid, $id); JsonResponse::send(['success' => true]); }
+            if ($method === 'POST' && $action === 'heartbeat') { $pomodoro->heartbeat($uid, $id, (bool) ($request->json()['microphone_enabled'] ?? false)); JsonResponse::send(['success' => true]); }
+            if ($method === 'POST' && $action === 'timer') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->timer($uid, $id, $request->json())]]);
+            if ($method === 'POST' && $action === 'music') { $pomodoro->addMusic($uid, $id, $request->json()); JsonResponse::send(['success' => true], 201); }
+            if ($method === 'POST' && $action === 'music/action') { $pomodoro->musicAction($uid, $id, (string) ($request->json()['action'] ?? '')); JsonResponse::send(['success' => true]); }
+            if ($action === 'signals' && $method === 'POST') { $pomodoro->signal($uid, $id, $request->json()); JsonResponse::send(['success' => true], 201); }
+            if ($action === 'signals' && $method === 'GET') JsonResponse::send(['success' => true, 'data' => ['items' => $pomodoro->signals($uid, $id, max(0, (int) ($_GET['after'] ?? 0)))]]);
+            if ($action === 'moderation' && $method === 'POST') { $pomodoro->moderate($uid, $id, $request->json()); JsonResponse::send(['success' => true]); }
+        }
     }
 
     if ($method === 'GET' && $path === '/api/me') {
