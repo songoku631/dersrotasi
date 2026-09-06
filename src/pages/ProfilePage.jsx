@@ -1,5 +1,5 @@
 import { Pencil, Save, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser, profileMediaUrl, saveProfile, uploadProfilePhoto } from '../api/client'
 import Button from '../components/Button'
 import Container from '../components/Container'
@@ -8,6 +8,7 @@ import ProfilePhotoCropModal from '../components/profile/ProfilePhotoCropModal'
 import UserAvatar from '../components/user/UserAvatar'
 import { useAuth } from '../context/useAuth'
 import { useUserPlan } from '../hooks/useUserPlan'
+import { profilePayload } from '../utils/profile'
 
 const educationLabels = { ortaokul: 'Ortaokul', lise: 'Lise', universite: 'Üniversite', mezun: 'Mezun' }
 const emptyProfile = {
@@ -30,6 +31,8 @@ function ProfilePage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [photoToCrop, setPhotoToCrop] = useState(null)
+  const saveFeedback = useRef(null)
+  const saving = useRef(false)
 
   const load = useCallback(async () => {
     if (!user) return
@@ -42,23 +45,33 @@ function ProfilePage() {
   }, [user])
 
   useEffect(() => { if (!authLoading) load() }, [authLoading, load])
+  useEffect(() => {
+    if (error || message) saveFeedback.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [error, message])
 
   function update(name, value) { setDraft((current) => ({ ...current, [name]: value })) }
   function notifyProfileUpdated() { window.dispatchEvent(new Event('dersrotasi:profile-updated')) }
 
   async function submit(event) {
-    event.preventDefault(); setStatus('saving'); setError(''); setMessage('')
+    event.preventDefault()
+    if (saving.current || status !== 'ready') return
+    setError(''); setMessage('')
     try {
-      const response = await saveProfile(user, {
-        ...draft,
-        birth_year: draft.birth_year || null,
-        target_rank: draft.target_rank || null,
-        daily_study_hours: draft.daily_study_hours || null,
-      })
+      const payload = profilePayload(draft)
+      if (!event.currentTarget.checkValidity()) {
+        const invalid = event.currentTarget.querySelector(':invalid')
+        const label = invalid?.closest('label')?.querySelector('span')?.textContent || 'Profil alanı'
+        invalid?.focus()
+        throw new Error(`${label}: ${invalid?.validationMessage || 'Bu alanı kontrol et.'}`)
+      }
+      saving.current = true; setStatus('saving')
+      const response = await saveProfile(user, payload)
+      if (!response.profile || response.success === false) throw new Error('Profil kaydı doğrulanamadı. Lütfen tekrar dene.')
       const next = { ...emptyProfile, ...response.profile }
       setProfile(next); setDraft(next); setMode('view'); setStatus('ready')
-      setMessage('Profil bilgilerin kaydedildi.'); notifyProfileUpdated()
-    } catch (requestError) { setError(requestError.message); setStatus('ready') }
+      setMessage('Profil kaydedildi'); notifyProfileUpdated()
+    } catch (requestError) { setError(requestError.message || 'Profil kaydedilemedi. Lütfen tekrar dene.'); setStatus('ready') }
+    finally { saving.current = false }
   }
 
   async function changePhoto(event) {
@@ -94,8 +107,8 @@ function ProfilePage() {
   return <>
     <PageHeader title="Profilim" description="Kimliğini, eğitim bilgilerini ve YKS hedeflerini tek yerden yönet." />
     <section className="section"><Container>
-      {error ? <div className="form-alert" role="alert"><p>{error}</p></div> : null}
-      {message ? <div className="success-alert" role="status"><p>{message}</p></div> : null}
+      {error && mode === 'view' ? <div ref={saveFeedback} className="form-alert" role="alert"><p>{error}</p></div> : null}
+      {message ? <div ref={saveFeedback} className="success-alert" role="status"><p>{message}</p></div> : null}
       <div className="profile-shell">
         <aside className="profile-summary">
           <UserAvatar className="profile-avatar" profile={profile} profilePhotoUrl={photoUrl} user={user} size={112} />
@@ -111,9 +124,9 @@ function ProfilePage() {
           <div className="profile-mode-header"><div><p className="eyebrow">{mode === 'view' ? 'Profil görünümü' : 'Düzenleme modu'}</p><h2>{mode === 'view' ? 'Profil bilgilerin' : 'Profilini düzenle'}</h2></div>{mode === 'view' ? <Button icon={Pencil} onClick={() => { setDraft(profile); setMode('edit'); setMessage('') }}>Profili Düzenle</Button> : null}</div>
           {mode === 'view' ? <div className="profile-view">
             <div className="profile-details">{info.map(([label, value]) => <div key={label}><span>{label}</span><strong>{valueOrDash(value)}</strong></div>)}</div>
-            <div className="profile-privacy-note"><strong>Gizlilik</strong><p>Profilin şu anda {profile.profile_visibility === 'public' ? 'herkese açık' : 'gizli'} olarak ayarlı. E-posta ve doğum yılı varsayılan olarak gizlidir.</p></div>
-            <div className="profile-goals"><h3>YKS hedefleri</h3><p><strong>Hedef bölüm:</strong> {valueOrDash(profile.target_department)}</p><p><strong>Hedef sıralama:</strong> {valueOrDash(profile.target_rank)}</p></div>
-          </div> : <form className="profile-form" onSubmit={submit}>
+            <div className="profile-privacy-note"><strong>Gizlilik</strong><p>Profilin şu anda {profile.profile_visibility === 'public' ? 'herkese açık' : 'gizli'} olarak ayarlı. Doğum yılını public profilde gösterme tercihin: {Number(profile.birth_year_public) ? 'Açık' : 'Kapalı'}.</p></div>
+            <div className="profile-goals"><h3>YKS hedefleri</h3><p><strong>Hedef bölüm:</strong> {valueOrDash(profile.target_department)}</p><p><strong>Hedef sıralama:</strong> {valueOrDash(profile.target_rank)}</p><p><strong>Puan türü:</strong> {({ sayisal: 'Sayısal', esit_agirlik: 'Eşit Ağırlık', sozel: 'Sözel', dil: 'Dil' })[profile.score_type]}</p><p><strong>Günlük çalışma saati:</strong> {valueOrDash(profile.daily_study_hours)}</p></div>
+          </div> : <form className="profile-form" noValidate onSubmit={submit}>
             <fieldset className="profile-form__fields" disabled={status !== 'ready'}>
               <h3>Temel bilgiler</h3><div className="profile-form__grid">
                 <Field label="Kullanıcı adı"><input autoCapitalize="none" maxLength="24" pattern="[a-z0-9_]{3,24}" required value={draft.username || ''} onChange={(e) => update('username', e.target.value.toLowerCase())} /></Field>
@@ -133,17 +146,17 @@ function ProfilePage() {
                 <Field label="Sınıf"><input maxLength="40" value={draft.grade_level} onChange={(e) => update('grade_level', e.target.value)} /></Field>
               </div>
               <h3>YKS hedefleri</h3><div className="profile-form__grid">
-                <Field label="Hedef bölüm"><input value={draft.target_department} onChange={(e) => update('target_department', e.target.value)} /></Field>
+                <Field label="Hedef bölüm"><input maxLength="160" value={draft.target_department} onChange={(e) => update('target_department', e.target.value)} /></Field>
                 <Field label="Hedef sıralama"><input min="1" type="number" value={draft.target_rank || ''} onChange={(e) => update('target_rank', e.target.value)} /></Field>
                 <Field label="Puan türü"><select value={draft.score_type} onChange={(e) => update('score_type', e.target.value)}><option value="sayisal">Sayısal</option><option value="esit_agirlik">Eşit Ağırlık</option><option value="sozel">Sözel</option><option value="dil">Dil</option></select></Field>
-                <Field label="Günlük çalışma saati"><input min="0" step="0.5" type="number" value={draft.daily_study_hours || ''} onChange={(e) => update('daily_study_hours', e.target.value)} /></Field>
+                <Field label="Günlük çalışma saati"><input inputMode="decimal" type="text" placeholder="Örn. 2,5" value={draft.daily_study_hours ?? ''} onChange={(e) => update('daily_study_hours', e.target.value)} /></Field>
               </div>
               <h3>Gizlilik</h3><div className="profile-form__grid">
                 <Field label="Profil görünürlüğü"><select value={draft.profile_visibility} onChange={(e) => update('profile_visibility', e.target.value)}><option value="private">Gizli</option><option value="public">Herkese açık</option></select></Field>
                 <label className="profile-checkbox"><input checked={Boolean(Number(draft.birth_year_public))} type="checkbox" onChange={(e) => update('birth_year_public', e.target.checked ? 1 : 0)} /><span>Doğum yılını ileride public profilde göster</span></label>
               </div>
             </fieldset>
-            <div className="profile-form__actions"><Button disabled={status !== 'ready'} icon={Save} type="submit">{status === 'saving' ? 'Kaydediliyor...' : 'Kaydet'}</Button><Button icon={X} type="button" variant="secondary" onClick={() => { setDraft(profile); setMode('view'); setError('') }}>İptal</Button></div>
+            {error ? <div ref={saveFeedback} className="form-alert" role="alert"><p>{error}</p></div> : null}<div className="profile-form__actions"><Button disabled={status !== 'ready'} icon={Save} type="submit">{status === 'saving' ? 'Kaydediliyor...' : 'Kaydet'}</Button><Button disabled={status !== 'ready'} icon={X} type="button" variant="secondary" onClick={() => { setDraft(profile); setMode('view'); setError('') }}>İptal</Button></div>
           </form>}
         </div>
       </div>

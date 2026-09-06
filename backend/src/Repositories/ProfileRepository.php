@@ -156,7 +156,7 @@ final class ProfileRepository
 
         $targetRank = $payload['target_rank'] ?? null;
         if ($targetRank !== null && $targetRank !== '') {
-            if (!filter_var($targetRank, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])) {
+            if (!filter_var($targetRank, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 4294967295]])) {
                 throw new RuntimeException('Hedef sıralama pozitif tam sayı olmalıdır.', 422);
             }
             $targetRank = (int) $targetRank;
@@ -166,8 +166,9 @@ final class ProfileRepository
 
         $dailyStudyHours = $payload['daily_study_hours'] ?? null;
         if ($dailyStudyHours !== null && $dailyStudyHours !== '') {
-            if (!is_numeric($dailyStudyHours) || (float) $dailyStudyHours < 0) {
-                throw new RuntimeException('Günlük çalışma süresi negatif olamaz.', 422);
+            $dailyStudyHours = str_replace(',', '.', trim((string) $dailyStudyHours));
+            if (!preg_match('/^\d+(?:\.\d)?$/', $dailyStudyHours) || (float) $dailyStudyHours > 24) {
+                throw new RuntimeException('Günlük çalışma saati 0–24 arasında olmalı; örneğin 2,5 veya 2.5 yaz.', 422);
             }
             $dailyStudyHours = (float) $dailyStudyHours;
         } else {
@@ -192,7 +193,7 @@ final class ProfileRepository
             'birth_year_public' => $this->booleanValue($payload['birth_year_public'] ?? false),
             'score_type' => $scoreType,
             'target_rank' => $targetRank,
-            'target_department' => $this->stringValue($payload, 'target_department'),
+            'target_department' => $this->limitedString($payload, 'target_department', 160),
             'preferred_cities' => $this->stringValue($payload, 'preferred_cities'),
             'university_type' => $universityType,
             'daily_study_hours' => $dailyStudyHours,
@@ -210,7 +211,7 @@ final class ProfileRepository
     private function limitedString(array $payload, string $key, int $maxLength): string
     {
         $value = $this->stringValue($payload, $key);
-        if (strlen($value) > $maxLength * 4) {
+        if (mb_strlen($value) > $maxLength) {
             throw new RuntimeException("{$key} alanı çok uzun.", 422);
         }
         return $value;

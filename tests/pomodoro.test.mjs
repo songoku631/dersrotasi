@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { defaultRoomName, formatTimer, remainingSeconds, supportedMusicUrl, validateRoom } from '../src/utils/pomodoro.js'
+import { canSpeakInRoom, defaultRoomName, formatTimer, remainingSeconds, roomSeconds, supportedMusicUrl, validateRoom } from '../src/utils/pomodoro.js'
+
+test('idle and paused timers preserve their duration', () => {
+  assert.equal(roomSeconds({ current_phase: 'idle', work_minutes: 25 }, 90000), 1500)
+  assert.equal(roomSeconds({ current_phase: 'paused', remaining_seconds: 123 }, 90000), 123)
+})
+test('running timer follows elapsed time after a suspended tab', () => {
+  const room = { current_phase: 'work', remaining_seconds: 1500 }
+  assert.equal(roomSeconds(room, 65000), 1435)
+  assert.equal(roomSeconds(room, 1600000), 0)
+  assert.equal(formatTimer(NaN), '00:00')
+})
+test('microphones are allowed only in a fresh unexpired break', () => {
+  const room = { current_phase: 'break', voice_enabled: true }
+  assert.equal(canSpeakInRoom(room, 20), true)
+  assert.equal(canSpeakInRoom(room, 0), false)
+  assert.equal(canSpeakInRoom(room, 20, false), false)
+  for (const current_phase of ['idle', 'work', 'paused']) assert.equal(canSpeakInRoom({ ...room, current_phase }, 20), false)
+  assert.equal(canSpeakInRoom({ ...room, voice_enabled: false }, 20), false)
+})
 
 test('server saat farkını hesaba katarak kalan süreyi hesaplar', () => {
   assert.equal(remainingSeconds('2026-09-04T12:25:00Z', '2026-09-04T12:00:00Z', Date.parse('2026-09-04T15:00:00Z')), 1500)

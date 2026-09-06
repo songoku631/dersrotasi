@@ -5,8 +5,19 @@ export function remainingSeconds(phaseEndsAt, serverNow, clientNow = Date.now())
 }
 
 export function formatTimer(seconds) {
-  const safe = Math.max(0, Number(seconds) || 0)
+  const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Math.ceil(Number(seconds))) : 0
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
+}
+
+export function roomSeconds(room, elapsedMs = 0) {
+  if (!room) return 0
+  const initial = Number(room.remaining_seconds ?? (room.work_minutes * 60))
+  const running = ['work', 'break'].includes(room.current_phase)
+  return Math.max(0, Math.ceil(initial - (running ? Math.max(0, elapsedMs) / 1000 : 0)))
+}
+
+export function canSpeakInRoom(room, seconds, fresh = true) {
+  return Boolean(fresh && room?.voice_enabled && room.current_phase === 'break' && seconds > 0)
 }
 
 export function validateRoom(values) {
