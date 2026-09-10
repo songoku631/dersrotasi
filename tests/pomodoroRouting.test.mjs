@@ -23,7 +23,14 @@ test('şifre toggle, kart etiketi ve katılım dialogu render edilir', () => {
   assert.match(pomodoroPageSource, /checked={form\.password_protected}/)
   assert.match(pomodoroPageSource, /Şifreli/)
   assert.match(pomodoroPageSource, /Bu oda şifreli/)
-  assert.match(pomodoroPageSource, /Şifreyi tekrar gir/)
+  assert.doesNotMatch(pomodoroPageSource, /password_confirmation/)
+  assert.doesNotMatch(pomodoroPageSource, /autoComplete="(?:new|current)-password"/)
+  const roomCodeInputs = pomodoroPageSource.match(/<input[^>]+name="room-access-code"[^>]+>/g)
+  assert.equal(roomCodeInputs.length, 2)
+  for (const input of roomCodeInputs) {
+    assert.match(input, /type="password"/)
+    assert.match(input, /autoComplete="off"/)
+  }
 })
 
 test('Pomodoro oda detayı ve navigasyon adresleri doğrudur', () => {

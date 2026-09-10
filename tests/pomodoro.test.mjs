@@ -29,17 +29,21 @@ test('bitmiş sayaç negatif olmaz', () => assert.equal(remainingSeconds('2026-0
 test('oda oluşturma alanlarını doğrular', () => {
   assert.ok(validateRoom({ name:'', category:'', work_minutes:2, break_minutes:0, max_members:1 }).name)
   assert.deepEqual(validateRoom({ name:'TYT Matematik', category:'TYT', visibility:'public', work_minutes:25, break_minutes:5, max_members:12 }), {})
-  assert.ok(validateRoom({ name:'Şifreli', category:'AYT', password_protected:true, password:'1234', password_confirmation:'4321', work_minutes:50, break_minutes:10, max_members:8 }).password_confirmation)
 })
 test('oda adı kullanıcı adından doğal ve güvenli fallback ile oluşturulur', () => {
   assert.equal(defaultRoomName('hayroking', 'ignored'), "@hayroking'in odası")
   assert.equal(defaultRoomName('', 'Ali'), "Ali'nin odası")
   assert.equal(defaultRoomName('', 'user@example.com'), 'Öğrenci odası')
 })
-test('şifre koruması uzunluk ve eşleşme kontrolü yapar', () => {
+test('protected rooms need only one password and enforce length limits', () => {
   const base={name:'Oda',category:'TYT',work_minutes:25,break_minutes:5,max_members:8,password_protected:true}
-  assert.ok(validateRoom({...base,password:'123',password_confirmation:'123'}).password)
-  assert.deepEqual(validateRoom({...base,password:'güvenli',password_confirmation:'güvenli'}),{})
+  for (const password of [undefined, '', '123', 'a'.repeat(65)]) {
+    assert.ok(validateRoom({...base,password}).password)
+  }
+  for (const password of ['1234', 'valid room code', 'a'.repeat(64)]) {
+    assert.deepEqual(validateRoom({...base,password}),{})
+  }
+  assert.deepEqual(validateRoom({...base,password_protected:false,password:''}),{})
 })
 test('müzik allowlist yalnızca desteklenen sağlayıcıları kabul eder', () => {
   assert.equal(supportedMusicUrl('https://youtu.be/abc'), true); assert.equal(supportedMusicUrl('https://open.spotify.com/track/abc'), true); assert.equal(supportedMusicUrl('https://evil.example/audio.mp3'), false)

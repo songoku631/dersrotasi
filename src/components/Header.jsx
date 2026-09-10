@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { getProfile, profileMediaUrl } from '../api/client'
-import { toolMenuItems } from '../data/tools'
 import Logo from './brand/Logo'
 import Button from './Button'
 import Container from './Container'
@@ -72,19 +71,7 @@ function Header() {
 
         <nav className="desktop-nav" aria-label="Ana menü">
           <NavLink to="/">Ana Sayfa</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown__trigger" type="button">
-              Araçlar
-              <ChevronDown aria-hidden="true" size={16} />
-            </button>
-            <div className="nav-dropdown__panel">
-              {toolMenuItems.map((tool) => (
-                <NavLink key={tool.path} to={tool.path}>
-                  {tool.title}
-                </NavLink>
-              ))}
-            </div>
-          </div>
+          <NavLink to="/yks-siralama-tahmini">YKS Puan Hesaplama</NavLink>
           <NavLink to="/universite-tercih">Üniversite Tercih</NavLink>
           <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>
@@ -142,8 +129,7 @@ function Header() {
       >
         <Container className="mobile-menu__inner">
           <NavLink to="/">Ana Sayfa</NavLink>
-          <strong className="mobile-menu__section-title">Araçlar</strong>
-          {toolMenuItems.map((tool) => <NavLink key={tool.path} to={tool.path}>{tool.title}</NavLink>)}
+          <NavLink to="/yks-siralama-tahmini">YKS Puan Hesaplama</NavLink>
           <NavLink to="/universite-tercih">Üniversite Tercih</NavLink>
           <NavLink to="/ai-asistan">Dersrotası AI</NavLink>
           <NavLink to="/tercihlerim">Tercihlerim</NavLink>

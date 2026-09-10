@@ -1,3 +1,8 @@
+export function selectRankYear(result, scoreYear, rankYear) {
+  if (Number(scoreYear) !== Number(rankYear)) return null
+  return result?.years?.find(item => item.year === Number(rankYear)) ?? null
+}
+
 export function officialBandPreferenceUrl(result) {
   if (!result || result.score_kind !== 'placement') return ''
   const currentYear = result.years?.find((item) => item.year === 2025)

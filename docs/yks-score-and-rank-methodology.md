@@ -1,5 +1,7 @@
 # YKS puan ve sıralama tahmini yöntemi
 
+> Bu belge mevcut backend tahmin servisinin yöntemini açıklar. Yeni net girişli frontend aracının kapsamı ve sınırlamaları için [YKS hesaplayıcı](yks-calculator.md) belgesine bakın.
+
 ## Resmî ve doğrulanabilir kaynaklar
 
 - [ÖSYM 2025-YKS Kılavuzu](https://dokuman.osym.gov.tr/pdfdokuman/2025/YKS/kilavuz11062025.pdf)

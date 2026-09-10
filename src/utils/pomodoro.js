@@ -29,7 +29,6 @@ export function validateRoom(values) {
   if (+values.max_members < 2 || +values.max_members > 50) errors.max_members = 'Kapasite 2-50 kişi olmalı.'
   if (values.password_protected) {
     if (!values.password || values.password.length < 4 || values.password.length > 64) errors.password = 'Oda şifresi 4-64 karakter olmalı.'
-    if (values.password !== values.password_confirmation) errors.password_confirmation = 'Şifreler eşleşmiyor.'
   }
   return errors
 }

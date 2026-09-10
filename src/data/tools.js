@@ -6,8 +6,8 @@ import {
 
 export const tools = [
   {
-    title: 'YKS Puan - Sıralama',
-    description: 'ÖSYM puanını gir, geçmiş yılların resmî başarı sırası aralıklarını karşılaştır.',
+    title: 'YKS Puan ve Sıralama Hesaplama',
+    description: 'TYT, AYT ve YDT netlerinle tahmini puanlarını ve sıralama aralıklarını hesapla.',
     path: '/yks-siralama-tahmini',
     icon: BarChart3,
   },

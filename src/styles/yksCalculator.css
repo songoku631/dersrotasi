@@ -1,0 +1,68 @@
+.yks-calculator { padding: 1.5rem 0 3rem; }
+.yks-heading { margin-bottom: 1rem; }
+.yks-heading h1 { margin: 0 0 0.5rem; font-size: clamp(1.45rem, 3vw, 2rem); }
+.yks-heading p, .yks-help { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.yks-help { margin: 0.65rem 0 0; }
+.yks-card { padding: 1.25rem; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 25px rgba(21, 36, 84, 0.04); min-width: 0; }
+.yks-card h2 { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 1.15rem; margin-bottom: 1rem; }
+.yks-card h2 small, .yks-ydt small { font-size: 0.75rem; color: var(--muted); font-weight: 500; }
+.yks-settings { display: grid; grid-template-columns: 1fr 1fr 1.5fr; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.yks-settings > label { display: grid; gap: 0.4rem; color: var(--navy); font-size: 0.85rem; font-weight: 700; }
+.yks-settings input:not([type=checkbox]), .yks-settings select, .yks-test input { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); padding: 0.55rem; font-size: 1rem; }
+.yks-settings > .yks-checkbox { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+.yks-checkbox input { width: 18px; height: 18px; accent-color: var(--purple); flex-shrink: 0; }
+.yks-checkbox small, .yks-test label small { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 400; }
+.yks-settings > p { grid-column: 1 / -1; margin: 0; }
+.yks-entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+.yks-field-sections { display: grid; gap: 1rem; }
+.yks-field-switch { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; }
+.yks-field-switch button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--navy); cursor: pointer; font-weight: 700; }
+.yks-field-switch button[aria-pressed=true] { background: #f3efff; color: var(--purple-dark); border-color: var(--purple); }
+.yks-test-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 54px; align-items: center; gap: 0.5rem; }
+.yks-test-head { color: var(--muted); font-size: 0.75rem; text-align: center; padding-bottom: 0.5rem; }
+.yks-test-head > :first-child { text-align: left; }
+.yks-test { padding: 0.55rem 0; border-top: 1px solid var(--line); }
+.yks-test label { color: var(--navy); font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.yks-test input { text-align: center; padding-inline: 0.2rem; }
+.yks-test output { color: var(--purple-dark); text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+.yks-test input[aria-invalid=true] { border-color: #b42318; }
+.yks-field-error { display: block; color: #b42318; margin-top: 0.4rem; }
+.yks-ydt summary, .yks-method summary { color: var(--navy); cursor: pointer; font-weight: 700; }
+.yks-ydt[open] summary { margin-bottom: 1rem; }
+.yks-submit { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.yks-submit span { color: var(--muted); font-size: 0.8rem; }
+.yks-submit .button span { color: inherit; font-size: inherit; }
+.yks-results { margin-top: 1.5rem; scroll-margin-top: 90px; }
+.yks-results > header h2 small { background: #f3efff; color: var(--purple-dark); border-radius: 20px; padding: 0.4rem 0.7rem; }
+.yks-totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.8rem; padding: 1rem 0; margin-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.yks-totals span { color: var(--muted); font-size: 0.8rem; }
+.yks-totals strong { display: block; color: var(--navy); font-size: 1.35rem; }
+.yks-score-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.yks-score-result { background: #f8f7fd; border-radius: 12px; padding: 1rem; min-width: 0; }
+.yks-score-result h3 { color: var(--purple-dark); }
+.yks-score-result dl { margin: 0; }
+.yks-score-result dl > div { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.yks-score-result dt { color: var(--muted); font-size: 0.8rem; }
+.yks-score-result dd { margin: 0; font-weight: 800; font-size: 1.1rem; color: var(--navy); }
+.yks-rank { display: grid; gap: 0.3rem; border-top: 1px solid var(--line); margin-top: 0.8rem; padding-top: 0.8rem; }
+.yks-rank > small, .yks-rank p { font-size: 0.78rem; color: var(--muted); margin: 0; }
+.yks-rank strong { font-size: 1.2rem; color: var(--purple-dark); overflow-wrap: anywhere; }
+.yks-rank a { color: var(--purple-dark); font-size: 0.75rem; }
+.yks-method { margin-top: 1.5rem; font-size: 0.85rem; color: var(--muted); }
+.yks-method p { margin: 0.8rem 0; }
+.yks-method a { display: inline-block; color: var(--purple-dark); margin: 0.4rem 1rem 0 0; }
+@media (max-width: 760px) {
+  .yks-entry-grid { grid-template-columns: 1fr; }
+  .yks-settings { grid-template-columns: 1fr 1fr; }
+  .yks-settings > .yks-checkbox { grid-column: 1 / -1; }
+  .yks-score-results { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .yks-calculator { padding-top: 1rem; }
+  .yks-card { padding: 0.9rem; }
+  .yks-test-row { grid-template-columns: minmax(0, 1fr) 52px 52px 42px; gap: 0.35rem; }
+  .yks-test label { font-size: 0.8rem; }
+  .yks-totals { grid-template-columns: repeat(3, 1fr); }
+  .yks-score-results { grid-template-columns: 1fr; }
+  .yks-submit { flex-direction: column; align-items: stretch; }
+}
