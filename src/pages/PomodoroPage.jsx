@@ -7,6 +7,7 @@ import Button from '../components/Button'
 import Container from '../components/Container'
 import { useAuth } from '../context/useAuth'
 import { defaultRoomName, formatTimer, roomSeconds, validateRoom } from '../utils/pomodoro'
+import { cancelRoomNavigation, finishRoomNavigation, prepareRoomNavigation } from '../utils/pomodoroNavigation'
 
 function freshForm(name = 'Öğrenci odası') {
   return { name, category: 'TYT', description: '', visibility: 'public', password_protected: false, password: '', work_minutes: 25, break_minutes: 5, max_members: 12, voice_enabled: true, music_enabled: true }
@@ -28,23 +29,22 @@ function PomodoroPage() {
   async function submit(event) {
     event.preventDefault(); if (submitting) return
     const nextErrors = validateRoom(form); setErrors(nextErrors); if (Object.keys(nextErrors).length) return
-    const roomTab = window.open('about:blank', '_blank')
-    if (!roomTab) return setError('Yeni oda sekmesi açılamadı. Tarayıcının açılır pencere iznini kontrol et.')
-    roomTab.opener = null; setSubmitting(true); setError('')
+    const destination = prepareRoomNavigation('new-room')
+    setSubmitting(true); setError('')
     const payload = { ...form }; if (!payload.password_protected) delete payload.password
     try {
       const response = await createRoom(user, payload); const createdRoom = response.data.room
       setRooms(current => createdRoom.visibility === 'public' ? [createdRoom, ...current.filter(room => room.id !== createdRoom.id)] : current)
-      setModal(false); roomTab.location.replace(new URL(`/pomodoro/room/${createdRoom.id}`, window.location.origin).href)
-    } catch (createError) { roomTab.close(); setError(createError.message) }
+      setModal(false); finishRoomNavigation({ ...destination, path: `/pomodoro/room/${createdRoom.id}` }, navigate)
+    } catch (createError) { cancelRoomNavigation(destination); setError(createError.message) }
     finally { setSubmitting(false) }
   }
 
   function requestJoin(room) { if (room.password_protected) { setJoinTarget(room); setJoinPassword(''); setJoinError(''); return } enterRoom(room, '') }
   async function enterRoom(room, password) {
-    if (joining) return; setJoining(true); setJoinError('')
-    try { await joinRoom(user, room.id, password); setJoinTarget(null); navigate(`/pomodoro/room/${room.id}`) }
-    catch (joinRequestError) { if (room.password_protected) setJoinError(joinRequestError.message); else setError(joinRequestError.message) }
+    if (joining) return; const destination = prepareRoomNavigation(room.id); setJoining(true); setJoinError('')
+    try { await joinRoom(user, room.id, password); setJoinTarget(null); finishRoomNavigation(destination, navigate) }
+    catch (joinRequestError) { cancelRoomNavigation(destination); if (room.password_protected) setJoinError(joinRequestError.message); else setError(joinRequestError.message) }
     finally { setJoining(false) }
   }
 

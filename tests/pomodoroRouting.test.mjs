@@ -11,12 +11,13 @@ test('Pomodoro placeholder listesinden çıkarılıp gerçek sayfaya bağlanır'
   assert.match(appSource, /path=['"]\/pomodoro['"] element={<PomodoroPage\s*\/>}/)
 })
 
-test('oda oluşturma yeni sekmeyi tıklama akışında açar ve çift gönderimi engeller', () => {
-  assert.match(pomodoroPageSource, /window\.open\('about:blank', '_blank'\)/)
-  assert.match(pomodoroPageSource, /roomTab\.location\.replace/)
+test('oda açma ve katılma mobilde aynı sekmeye güvenli dönüş için navigation yardımcısını kullanır', () => {
+  assert.match(pomodoroPageSource, /prepareRoomNavigation\('new-room'\)/)
+  assert.match(pomodoroPageSource, /prepareRoomNavigation\(room\.id\)/)
+  assert.match(pomodoroPageSource, /finishRoomNavigation/)
+  assert.match(pomodoroPageSource, /cancelRoomNavigation/)
   assert.match(pomodoroPageSource, /setModal\(false\)/)
   assert.match(pomodoroPageSource, /disabled={submitting}/)
-  assert.match(pomodoroPageSource, /roomTab\.close\(\)/)
 })
 
 test('şifre toggle, kart etiketi ve katılım dialogu render edilir', () => {

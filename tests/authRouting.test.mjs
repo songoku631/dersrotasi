@@ -14,6 +14,7 @@ test('backend profilinde kullanıcı adı olan hesabı normal akışa yönlendir
 
 test('korumalı sayfadan girişe gelen kullanıcıyı kaldığı sayfaya döndürür', () => {
   assert.equal(postLoginPath({ username: 'deniz_2026' }, '/tercihlerim'), '/tercihlerim')
+  assert.equal(postLoginPath({ username: 'deniz_2026' }, '/pomodoro/room/42'), '/pomodoro/room/42')
 })
 
 test('kullanıcı adı olan hesabı auth sayfalarına geri döndürmez', () => {
