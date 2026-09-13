@@ -136,6 +136,27 @@ final class Env
             ?: 'omni-moderation-latest';
     }
 
+    public function turnUrls(): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', $this->get('TURN_URLS')))));
+    }
+
+    public function turnSecret(): string
+    {
+        return trim($this->get('TURN_SECRET'));
+    }
+
+    public function pomodoroChatStorage(): string
+    {
+        $value = strtolower(trim($this->get('POMODORO_CHAT_STORAGE', $this->appEnv() === 'local' ? 'local' : 'gcs')));
+        return in_array($value, ['local', 'gcs'], true) ? $value : 'gcs';
+    }
+
+    public function pomodoroChatGcsBucket(): string
+    {
+        return trim($this->get('POMODORO_CHAT_GCS_BUCKET'));
+    }
+
     public function aiFreeDailyRequests(): int
     {
         return $this->positiveInt('AI_FREE_DAILY_REQUESTS', 5, 1, 1000);

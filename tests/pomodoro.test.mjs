@@ -12,13 +12,10 @@ test('running timer follows elapsed time after a suspended tab', () => {
   assert.equal(roomSeconds(room, 1600000), 0)
   assert.equal(formatTimer(NaN), '00:00')
 })
-test('microphones are allowed only in a fresh unexpired break', () => {
-  const room = { current_phase: 'break', voice_enabled: true }
-  assert.equal(canSpeakInRoom(room, 20), true)
-  assert.equal(canSpeakInRoom(room, 0), false)
-  assert.equal(canSpeakInRoom(room, 20, false), false)
-  for (const current_phase of ['idle', 'work', 'paused']) assert.equal(canSpeakInRoom({ ...room, current_phase }, 20), false)
-  assert.equal(canSpeakInRoom({ ...room, voice_enabled: false }, 20), false)
+test('microphone availability is independent from the timer phase', () => {
+  const room = { voice_enabled: true }
+  for (const current_phase of ['idle', 'work', 'break', 'paused']) assert.equal(canSpeakInRoom({ ...room, current_phase }), true)
+  assert.equal(canSpeakInRoom({ ...room, voice_enabled: false }), false)
 })
 
 test('server saat farkını hesaba katarak kalan süreyi hesaplar', () => {

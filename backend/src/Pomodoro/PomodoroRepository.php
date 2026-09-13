@@ -41,11 +41,11 @@ final class PomodoroRepository {
         return $room;
     }
     public function join(string $uid,int $id,string $password=''): array { $this->rate($uid,'join',20); $r=$this->raw($id); if($r['room_code_hash']!==null&&!password_verify($password,(string)$r['room_code_hash'])) throw new RuntimeException('Oda şifresi yanlış.',403); $active=self::ACTIVE_PRESENCE_SECONDS; $count=(int)$this->pdo->query("SELECT COUNT(*) FROM pomodoro_room_members WHERE room_id={$id} AND status='active' AND last_seen_at>DATE_SUB(NOW(),INTERVAL {$active} SECOND)")->fetchColumn(); if($count >= (int)$r['max_members']) throw new RuntimeException('Oda kapasitesi dolu.',409); $this->upsertMember($id,$uid,$r['owner_uid']===$uid?'owner':'member'); $this->pdo->prepare('INSERT INTO pomodoro_sessions(room_id,user_uid) VALUES(:r,:u)')->execute(['r'=>$id,'u'=>$uid]); return $this->get($uid,$id); }
-    public function heartbeat(string $uid,int $id,bool $mic): void { $this->assertMember($id,$uid); $this->advance($id); $this->account($id,$uid); $r=$this->raw($id); $mic=$mic && (bool)$r['voice_enabled'] && $r['current_phase']==='break'; $this->pdo->prepare('UPDATE pomodoro_room_members SET last_seen_at=NOW(),microphone_enabled=:m WHERE room_id=:r AND user_uid=:u')->execute(['m'=>$mic?1:0,'r'=>$id,'u'=>$uid]); }
+    public function heartbeat(string $uid,int $id,bool $mic): void { $this->assertMember($id,$uid); $this->advance($id); $this->account($id,$uid); $r=$this->raw($id); $mic=$mic && (bool)$r['voice_enabled']; $this->pdo->prepare('UPDATE pomodoro_room_members SET last_seen_at=NOW(),microphone_enabled=:m WHERE room_id=:r AND user_uid=:u')->execute(['m'=>$mic?1:0,'r'=>$id,'u'=>$uid]); }
     public function leave(string $uid,int $id): void { $this->account($id,$uid); $room=$this->raw($id); $this->pdo->prepare("UPDATE pomodoro_room_members SET status='left',microphone_enabled=0 WHERE room_id=:r AND user_uid=:u")->execute(['r'=>$id,'u'=>$uid]); $this->pdo->prepare('UPDATE pomodoro_sessions SET ended_at=NOW() WHERE room_id=:r AND user_uid=:u AND ended_at IS NULL')->execute(['r'=>$id,'u'=>$uid]); if($room['owner_uid']===$uid)$this->transferOwner($id,$uid); }
     public function get(string $uid,int $id): array {
         $this->reconcileRooms(); $this->raw($id); $this->assertMember($id,$uid); $this->advance($id);
-        $r=$this->raw($id); if($r['current_phase']!=='break'||!$r['voice_enabled']) $this->pdo->prepare('UPDATE pomodoro_room_members SET microphone_enabled=0 WHERE room_id=:r AND microphone_enabled<>0')->execute(['r'=>$id]); $active=self::ACTIVE_PRESENCE_SECONDS;
+        $r=$this->raw($id); $active=self::ACTIVE_PRESENCE_SECONDS;
         $s=$this->pdo->prepare("SELECT m.* FROM pomodoro_room_members m WHERE m.room_id=:r AND m.status='active' AND m.last_seen_at>DATE_SUB(NOW(),INTERVAL {$active} SECOND) ORDER BY m.role='owner' DESC,m.joined_at");
         $s->execute(['r'=>$id]); $memberRows=$s->fetchAll(PDO::FETCH_ASSOC);
         $q=$this->pdo->prepare('SELECT q.* FROM pomodoro_music_queue q WHERE q.room_id=:r ORDER BY q.position,q.id');
@@ -72,6 +72,38 @@ final class PomodoroRepository {
     public function musicAction(string $uid,int $id,string $a):void { $this->owner($id,$uid);if($a==='clear')$this->pdo->prepare('DELETE FROM pomodoro_music_queue WHERE room_id=:r')->execute(['r'=>$id]);elseif($a==='skip')$this->pdo->prepare('DELETE FROM pomodoro_music_queue WHERE room_id=:r ORDER BY position,id LIMIT 1')->execute(['r'=>$id]);else throw new RuntimeException('Müzik işlemi geçersiz.',422); }
     public function signal(string $uid,int $id,array $p):void { $this->rate($uid,'signal',120);$this->assertMember($id,$uid);$type=$p['signal_type']??'';$to=(string)($p['recipient_uid']??'');if(!in_array($type,['offer','answer','ice'],true)||!is_array($p['payload']??null)||strlen(json_encode($p['payload']))>12000)throw new RuntimeException('Sinyal geçersiz.',422);$this->assertMember($id,$to);$this->pdo->prepare('INSERT INTO pomodoro_signals(room_id,sender_uid,recipient_uid,signal_type,payload) VALUES(:r,:s,:to,:t,:p)')->execute(['r'=>$id,'s'=>$uid,'to'=>$to,'t'=>$type,'p'=>json_encode($p['payload'])]); }
     public function signals(string $uid,int $id,int $after):array { $this->assertMember($id,$uid);$s=$this->pdo->prepare('SELECT id,sender_uid,signal_type,payload FROM pomodoro_signals WHERE room_id=:r AND recipient_uid=:u AND id>:a ORDER BY id LIMIT 100');$s->execute(['r'=>$id,'u'=>$uid,'a'=>$after]);return array_map(fn($x)=>[...$x,'id'=>(int)$x['id'],'payload'=>json_decode($x['payload'],true)],$s->fetchAll(PDO::FETCH_ASSOC)); }
+    public function messages(string $uid,int $id,int $after=0):array {
+        $this->raw($id); $this->assertMember($id,$uid);
+        $direction=$after===0?'DESC':'ASC';
+        $s=$this->pdo->prepare("SELECT m.id,m.user_uid,m.message,m.message_type,m.attachment_path,m.attachment_mime,m.attachment_width,m.attachment_height,m.created_at,p.username,p.profile_photo_path FROM pomodoro_room_messages m LEFT JOIN user_profiles p ON p.firebase_uid=m.user_uid WHERE m.room_id=:r AND m.id>:after ORDER BY m.id {$direction} LIMIT 100");
+        $s->execute(['r'=>$id,'after'=>max(0,$after)]);
+        $rows=$s->fetchAll(PDO::FETCH_ASSOC); if($after===0)$rows=array_reverse($rows);
+        return array_map(static fn(array $m):array=>['id'=>(int)$m['id'],'user_key'=>$m['user_uid'],'username'=>$m['username']?:'Öğrenci','profile_photo_url'=>$m['profile_photo_path']??null,'message'=>$m['message'],'message_type'=>$m['message_type'],'attachment_path'=>$m['attachment_path'],'attachment_mime'=>$m['attachment_mime'],'attachment_width'=>$m['attachment_width']!==null?(int)$m['attachment_width']:null,'attachment_height'=>$m['attachment_height']!==null?(int)$m['attachment_height']:null,'created_at'=>$m['created_at']],$rows);
+    }
+    public function sendMessage(string $uid,int $id,array $payload):array {
+        $this->raw($id); $this->assertMember($id,$uid); $this->rate($uid,'message',30);
+        $message=trim((string)($payload['message']??''));
+        if($message===''||mb_strlen($message)>1000) throw new RuntimeException('Mesaj 1-1000 karakter olmalıdır.',422);
+        $s=$this->pdo->prepare('INSERT INTO pomodoro_room_messages(room_id,user_uid,message) VALUES(:r,:u,:m)');
+        $s->execute(['r'=>$id,'u'=>$this->uid($uid),'m'=>$message]);
+        $items=$this->messages($uid,$id,(int)$this->pdo->lastInsertId()-1);
+        return $items[0];
+    }
+    public function sendImageMessage(string $uid,int $id,array $image,string $caption=''):array {
+        $this->raw($id);$this->assertMember($id,$uid);$this->rate($uid,'message',30);$caption=trim($caption);
+        if(mb_strlen($caption)>1000||!preg_match('#^pomodoro/'.$id.'/[a-f0-9]{48}\.jpg$#D',(string)($image['path']??''))||($image['mime']??'')!=='image/jpeg')throw new RuntimeException('Görsel mesajı geçersiz.',422);
+        $s=$this->pdo->prepare("INSERT INTO pomodoro_room_messages(room_id,user_uid,message_type,message,attachment_path,attachment_mime,attachment_width,attachment_height) VALUES(:r,:u,'image',:m,:p,:mime,:w,:h)");
+        $s->execute(['r'=>$id,'u'=>$this->uid($uid),'m'=>$caption,'p'=>$image['path'],'mime'=>$image['mime'],'w'=>(int)$image['width'],'h'=>(int)$image['height']]);
+        return $this->messages($uid,$id,(int)$this->pdo->lastInsertId()-1)[0];
+    }
+    public function assertActiveMember(string $uid,int $id):void{$this->raw($id);$this->assertMember($id,$uid);}
+    public function imageAttachment(string $uid,int $id,int $messageId):array {
+        $this->raw($id);$this->assertMember($id,$uid);
+        $s=$this->pdo->prepare("SELECT attachment_path,attachment_mime FROM pomodoro_room_messages WHERE id=:message AND room_id=:room AND message_type='image'");
+        $s->execute(['message'=>$messageId,'room'=>$id]);$image=$s->fetch(PDO::FETCH_ASSOC);
+        if(!$image||$image['attachment_mime']!=='image/jpeg'||!preg_match('#^pomodoro/'.$id.'/[a-f0-9]{48}\.jpg$#D',(string)$image['attachment_path']))throw new RuntimeException('Görsel bulunamadı.',404);
+        return ['path'=>$image['attachment_path'],'mime'=>'image/jpeg'];
+    }
     public function moderate(string $uid,int $id,array $p):void { $action=$p['action']??'';$target=(string)($p['target_uid']??'');if($action==='report'){ $this->rate($uid,'report',5,3600);$this->assertMember($id,$uid);$reason=mb_substr(trim((string)($p['reason']??'')),0,200);if($reason==='')throw new RuntimeException('Şikâyet nedeni gerekli.',422);$this->pdo->prepare('INSERT INTO pomodoro_reports(room_id,reporter_uid,reported_uid,reason) VALUES(:r,:u,:t,:why)')->execute(['r'=>$id,'u'=>$uid,'t'=>$target,'why'=>$reason]);return;} $this->owner($id,$uid);if(!in_array($action,['kick','block'],true))throw new RuntimeException('Moderasyon işlemi geçersiz.',422);$this->pdo->prepare("UPDATE pomodoro_room_members SET status=:s WHERE room_id=:r AND user_uid=:u AND role<>'owner'")->execute(['s'=>$action==='block'?'blocked':'kicked','r'=>$id,'u'=>$target]); }
     public function stats(string $uid):array { $s=$this->pdo->prepare("SELECT COALESCE(SUM(CASE WHEN started_at>=CURDATE() THEN focused_seconds ELSE 0 END),0) today_seconds,COALESCE(SUM(CASE WHEN started_at>=DATE_SUB(CURDATE(),INTERVAL WEEKDAY(CURDATE()) DAY) THEN focused_seconds ELSE 0 END),0) week_seconds,COALESCE(SUM(completed_cycles),0) completed_cycles FROM pomodoro_sessions WHERE user_uid=:u");$s->execute(['u'=>$uid]);return array_map('intval',$s->fetch(PDO::FETCH_ASSOC)); }
     private function account(int $id,string $uid):void { $r=$this->raw($id);if($r['current_phase']==='work')$this->pdo->prepare('UPDATE pomodoro_sessions SET focused_seconds=focused_seconds+LEAST(30,GREATEST(0,TIMESTAMPDIFF(SECOND,last_accounted_at,NOW()))),last_accounted_at=NOW() WHERE room_id=:r AND user_uid=:u AND ended_at IS NULL')->execute(['r'=>$id,'u'=>$uid]); }

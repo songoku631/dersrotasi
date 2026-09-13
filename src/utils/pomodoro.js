@@ -16,8 +16,8 @@ export function roomSeconds(room, elapsedMs = 0) {
   return Math.max(0, Math.ceil(initial - (running ? Math.max(0, elapsedMs) / 1000 : 0)))
 }
 
-export function canSpeakInRoom(room, seconds, fresh = true) {
-  return Boolean(fresh && room?.voice_enabled && room.current_phase === 'break' && seconds > 0)
+export function canSpeakInRoom(room) {
+  return Boolean(room?.voice_enabled)
 }
 
 export function validateRoom(values) {

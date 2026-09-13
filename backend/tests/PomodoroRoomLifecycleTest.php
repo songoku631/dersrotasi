@@ -18,6 +18,7 @@ $pdo->exec("CREATE TEMPORARY TABLE pomodoro_room_members (room_id BIGINT UNSIGNE
 $pdo->exec("CREATE TEMPORARY TABLE pomodoro_sessions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,room_id BIGINT UNSIGNED NOT NULL,user_uid VARCHAR(128) NOT NULL,started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,last_accounted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,ended_at DATETIME,focused_seconds INT UNSIGNED NOT NULL DEFAULT 0,completed_cycles INT UNSIGNED NOT NULL DEFAULT 0) ENGINE=InnoDB");
 $pdo->exec("CREATE TEMPORARY TABLE pomodoro_music_queue (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,room_id BIGINT UNSIGNED NOT NULL,provider ENUM('youtube','spotify') NOT NULL,external_url VARCHAR(500) NOT NULL,external_id VARCHAR(100) NOT NULL,title VARCHAR(160) NOT NULL DEFAULT '',added_by_uid VARCHAR(128) NOT NULL,position INT UNSIGNED NOT NULL,started_at DATETIME(3),created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");
 $pdo->exec("CREATE TEMPORARY TABLE pomodoro_rate_limits (action_key VARCHAR(190) PRIMARY KEY,attempts SMALLINT UNSIGNED NOT NULL DEFAULT 1,window_started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");
+$pdo->exec("CREATE TEMPORARY TABLE pomodoro_room_messages (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,room_id BIGINT UNSIGNED NOT NULL,user_uid VARCHAR(128) NOT NULL,message_type ENUM('text','image') NOT NULL DEFAULT 'text',message VARCHAR(1000) NOT NULL,attachment_path VARCHAR(255),attachment_mime VARCHAR(40),attachment_width SMALLINT UNSIGNED,attachment_height SMALLINT UNSIGNED,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),INDEX idx_messages(room_id,id)) ENGINE=InnoDB");
 $pdo->exec("INSERT INTO user_profiles(firebase_uid) VALUES('owner-a')");
 $repo=new PomodoroRepository($pdo); $payload=['name'=>'Lifecycle','category'=>'TYT','work_minutes'=>25,'break_minutes'=>5,'max_members'=>12];
 $room=$repo->create('owner-a',$payload); $id=$room['id'];
@@ -56,7 +57,7 @@ lifecycleCheck($timerRoom['remaining_seconds']===1500,'Idle timer must show conf
 $started=$repo->timer('timer-owner',$timerId,['action'=>'start']);
 lifecycleCheck($started['remaining_seconds']>=1498 && $started['remaining_seconds']<=1500,'Timer duration must use database time.');
 $repo->heartbeat('timer-owner',$timerId,true);
-lifecycleCheck(!$repo->get('timer-owner',$timerId)['members'][0]['microphone_enabled'],'Work phase must reject microphone activation.');
+lifecycleCheck($repo->get('timer-owner',$timerId)['members'][0]['microphone_enabled'],'Work phase must preserve microphone activation.');
 $paused=$repo->timer('timer-owner',$timerId,['action'=>'pause']);
 lifecycleCheck($paused['remaining_seconds']>0 && $paused['phase_before_pause']==='work','Pause must preserve remaining time and phase.');
 $resumed=$repo->timer('timer-owner',$timerId,['action'=>'resume']);
@@ -66,7 +67,7 @@ lifecycleCheck($breakRoom['current_phase']==='break' && $breakRoom['remaining_se
 $repo->heartbeat('timer-owner',$timerId,true);
 lifecycleCheck($repo->get('timer-owner',$timerId)['members'][0]['microphone_enabled'],'Microphone must be allowed during break.');
 $pausedBreak=$repo->timer('timer-owner',$timerId,['action'=>'pause']);
-lifecycleCheck(!$pausedBreak['members'][0]['microphone_enabled'],'Pausing break must mute microphones.');
+lifecycleCheck($pausedBreak['members'][0]['microphone_enabled'],'Pausing break must preserve microphone preference.');
 $nextWork=$repo->timer('timer-owner',$timerId,['action'=>'next']);
 lifecycleCheck($nextWork['current_phase']==='work' && $nextWork['cycle_number']===2,'Next from paused break must start the next work cycle.');
 $pdo->exec("UPDATE pomodoro_rooms SET phase_ends_at=DATE_SUB(NOW(),INTERVAL 1 SECOND) WHERE id={$timerId}");
@@ -74,5 +75,20 @@ lifecycleCheck($repo->get('timer-owner',$timerId)['current_phase']==='break','Ex
 $repo->heartbeat('timer-owner',$timerId,true);
 $pdo->exec("UPDATE pomodoro_rooms SET phase_ends_at=DATE_SUB(NOW(),INTERVAL 1 SECOND) WHERE id={$timerId}");
 $afterBreak=$repo->get('timer-owner',$timerId);
-lifecycleCheck($afterBreak['current_phase']==='work' && !$afterBreak['members'][0]['microphone_enabled'],'Expired break must start work and mute members.');
+lifecycleCheck($afterBreak['current_phase']==='work' && $afterBreak['members'][0]['microphone_enabled'],'Expired break must start work without muting members.');
+$chatRoom=$repo->create('chat-owner',[...$payload,'name'=>'Chat room']); $chatId=$chatRoom['id']; $repo->join('chat-guest',$chatId);
+$first=$repo->sendMessage('chat-owner',$chatId,['message'=>'Merhaba <script>alert(1)</script>']);
+lifecycleCheck($first['user_key']==='chat-owner' && $first['message']==='Merhaba <script>alert(1)</script>','Mesaj kimliği backend tarafından oturumdan gelmeli ve içerik veri olarak korunmalı.');
+$second=$repo->sendMessage('chat-guest',$chatId,['message'=>'Hazırım']);
+$guestMessages=$repo->messages('chat-owner',$chatId,$first['id']);
+lifecycleCheck(count($guestMessages)===1 && $guestMessages[0]['id']===$second['id'] && $guestMessages[0]['user_key']==='chat-guest','Cursor yalnızca yeni mesajı diğer üyeye vermeli.');
+lifecycleThrows(fn()=>$repo->sendMessage('outsider',$chatId,['message'=>'Gizli mesaj']),403,'Bu odaya erişimin yok.');
+lifecycleThrows(fn()=>$repo->sendMessage('chat-owner',$chatId,['message'=>'   ']),422,'Mesaj 1-1000 karakter olmalıdır.');
+lifecycleThrows(fn()=>$repo->sendMessage('chat-owner',$chatId,['message'=>str_repeat('a',1001)]),422,'Mesaj 1-1000 karakter olmalıdır.');
+$image=$repo->sendImageMessage('chat-owner',$chatId,['path'=>'pomodoro/'.$chatId.'/'.str_repeat('a',48).'.jpg','mime'=>'image/jpeg','width'=>800,'height'=>600],'Soru fotoğrafı');
+lifecycleCheck($image['message_type']==='image'&&$image['attachment_width']===800,'Görsel mesaj metadata ile saklanmalı.');
+lifecycleCheck($repo->imageAttachment('chat-owner',$chatId,$image['id'])['mime']==='image/jpeg','Üye görseli okuyabilmeli.');
+lifecycleThrows(fn()=>$repo->imageAttachment('outsider',$chatId,$image['id']),403,'Bu odaya erişimin yok.');
+lifecycleThrows(fn()=>$repo->imageAttachment('chat-owner',$chatId,999999),404,'Görsel bulunamadı.');
+lifecycleThrows(fn()=>$repo->sendImageMessage('outsider',$chatId,['path'=>'pomodoro/'.$chatId.'/'.str_repeat('b',48).'.jpg','mime'=>'image/jpeg','width'=>1,'height'=>1]),403,'Bu odaya erişimin yok.');
 echo "PomodoroRoomLifecycleTest: OK\n";
