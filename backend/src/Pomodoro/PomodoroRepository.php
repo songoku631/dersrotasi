@@ -16,6 +16,7 @@ final class PomodoroRepository {
         elseif ((int)$r['attempts'] >= $limit) throw new RuntimeException('Çok fazla istek gönderdin. Lütfen biraz bekle.',429);
         else $this->pdo->prepare('UPDATE pomodoro_rate_limits SET attempts=attempts+1 WHERE action_key=:k')->execute(['k'=>$key]);
     }
+    public function rateTurnCredentials(string $uid): void { $this->rate($uid, 'turn-credentials', 12, 60); }
     public function list(string $uid, string $filter): array {
         $this->reconcileRooms();
         $order=$filter==='popular'?'member_count DESC': 'r.created_at DESC'; $where=in_array($filter,['TYT','AYT'],true)?' AND r.category=:category':'';

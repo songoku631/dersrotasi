@@ -385,7 +385,7 @@ function PomodoroRoomPage() {
                 </div>
               )}
             </header>
-            {error && <div className="pomo-alert room-alert">{error}</div>}
+            {(error || voice.error) && <div className="pomo-alert room-alert">{error || voice.error}</div>}
             <section className="room-timer">
               <div className={`phase-badge phase--${phase}`}>
                 {phaseText(phase)}

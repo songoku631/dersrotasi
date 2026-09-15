@@ -8,14 +8,28 @@ final class TurnIceConfigService
 
     public function create(string $uid, array $turnUrls, string $secret, ?int $now = null): array
     {
-        $servers = [['urls' => ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']]];
-        $expiresAt = null;
-        $urls = array_values(array_filter($turnUrls, static fn($url) => is_string($url) && preg_match('#^turns?:[^\s]+$#', $url)));
-        if ($urls !== [] && $secret !== '') {
-            $expiresAt = ($now ?? time()) + self::TTL_SECONDS;
-            $username = $expiresAt . ':' . substr(hash('sha256', $uid), 0, 24);
-            $servers[] = ['urls' => $urls, 'username' => $username, 'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true))];
+        if ($uid === '' || $secret === '') {
+            throw new \RuntimeException('Ses bağlantısı şu anda güvenli şekilde hazırlanamadı. Lütfen daha sonra tekrar dene.', 503);
         }
-        return ['ice_servers' => $servers, 'relay_available' => count($servers) > 1, 'expires_at' => $expiresAt];
+
+        $urls = array_values(array_filter($turnUrls, static fn($url) => is_string($url) && preg_match('#^turns?:[^\s]+$#', $url)));
+        if ($urls === []) {
+            throw new \RuntimeException('Ses bağlantısı şu anda güvenli şekilde hazırlanamadı. Lütfen daha sonra tekrar dene.', 503);
+        }
+
+        $expiresAt = ($now ?? time()) + self::TTL_SECONDS;
+        $username = $expiresAt . ':' . substr(hash('sha256', $uid), 0, 24);
+
+        return [
+            'iceServers' => [
+                ['urls' => ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']],
+                [
+                    'urls' => $urls,
+                    'username' => $username,
+                    'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
+                ],
+            ],
+            'expiresAt' => gmdate('c', $expiresAt),
+        ];
     }
 }

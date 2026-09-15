@@ -15,7 +15,7 @@ export const getSignals = (user, id, after = 0) => apiRequest(`/api/pomodoro/roo
 export const moderate = (user, id, action, target_uid, reason = '') => apiRequest(`/api/pomodoro/rooms/${id}/moderation`, { user, auth: true, method: 'POST', body: { action, target_uid, reason } })
 export const getRoomMessages = (user, id, after = 0, signal) => apiRequest(`/api/pomodoro/rooms/${id}/messages?after=${Math.max(0, Number(after) || 0)}`, { user, auth: true, signal })
 export const sendRoomMessage = (user, id, message) => apiRequest(`/api/pomodoro/rooms/${id}/messages`, { user, auth: true, method: 'POST', body: { message } })
-export const getVoiceIceConfig = user => apiRequest('/api/pomodoro/voice/ice-config', { user, auth: true })
+export const getTurnCredentials = user => apiRequest('/api/pomodoro/turn-credentials', { user, auth: true })
 export const getRoomImage = (user, roomId, messageId, signal) => authenticatedBlob(user, `/api/pomodoro/rooms/${roomId}/messages/${messageId}/image`, signal)
 export async function sendRoomImage(user, id, file, message = '') {
   if (!user) throw new Error('Bu işlem için giriş yapmalısın.')

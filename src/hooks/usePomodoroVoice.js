@@ -1,6 +1,6 @@
 /* oxlint-disable react-hooks/exhaustive-deps -- peer lifecycle is intentionally keyed by room/user. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSignals, getVoiceIceConfig, sendSignal } from "../api/pomodoroApi";
+import { getSignals, getTurnCredentials, sendSignal } from "../api/pomodoroApi";
 
 export function usePomodoroVoice({
   user,
@@ -26,6 +26,23 @@ export function usePomodoroVoice({
     { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
   ]);
   const iceExpiresAt = useRef(0);
+  const applyTurnCredentials = useCallback((config) => {
+    const expiresAt = Date.parse(config?.expiresAt);
+    const hasCredentialedTurnServer = config?.iceServers?.some(
+      (server) =>
+        Array.isArray(server?.urls) &&
+        server.urls.some((url) => /^turns?:/i.test(url)) &&
+        typeof server.username === "string" &&
+        server.username !== "" &&
+        typeof server.credential === "string" &&
+        server.credential !== "",
+    );
+    if (!hasCredentialedTurnServer || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      throw new Error("Invalid TURN credentials response");
+    }
+    iceServers.current = config.iceServers;
+    iceExpiresAt.current = expiresAt;
+  }, []);
   const debug = (event, uid, pc, extra = {}) => {
     if (import.meta.env.DEV)
       console.debug("[PomodoroVoice]", event, {
@@ -93,12 +110,13 @@ export function usePomodoroVoice({
   const join = useCallback(async () => {
     if (!enabled || !speakAllowed.current || stream.current) return;
     const attempt = generation.current;
+    let turnCredentialsReady = false;
     try {
       setError("");
       setStatus("connecting");
-      const config = await getVoiceIceConfig(user);
-      iceServers.current = config.data.ice_servers;
-      iceExpiresAt.current = config.data.expires_at || 0;
+      const config = await getTurnCredentials(user);
+      applyTurnCredentials(config);
+      turnCredentialsReady = true;
       const acquired = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
         video: false,
@@ -127,10 +145,14 @@ export function usePomodoroVoice({
           makePeer(member.user_key, user.uid < member.user_key),
         );
     } catch {
-      setError("Mikrofon izni verilmedi veya ses bağlantısı kurulamadı.");
+      setError(
+        turnCredentialsReady
+          ? "Mikrofon izni verilmedi veya ses bağlantısı kurulamadı."
+          : "Ses bağlantısı şu anda güvenli şekilde hazırlanamadı. Lütfen daha sonra tekrar dene.",
+      );
       setStatus("error");
     }
-  }, [enabled, makePeer, members, user]);
+  }, [applyTurnCredentials, enabled, makePeer, members, user]);
   const leave = useCallback(() => {
     ++generation.current;
     stream.current?.getTracks().forEach((track) => track.stop());
@@ -154,19 +176,19 @@ export function usePomodoroVoice({
   useEffect(() => {
     if (status !== "connected" || !iceExpiresAt.current) return;
     const refresh = async () => {
-      if (Date.now() / 1000 < iceExpiresAt.current - 600) return;
+      if (Date.now() < iceExpiresAt.current - 10 * 60 * 1000) return;
       try {
-        const config = await getVoiceIceConfig(user);
-        iceServers.current = config.data.ice_servers;
-        iceExpiresAt.current = config.data.expires_at || 0;
-        debug("ice-config-refreshed", user.uid, null, { relayAvailable: config.data.relay_available });
+        const config = await getTurnCredentials(user);
+        applyTurnCredentials(config);
+        debug("ice-config-refreshed", user.uid, null, { relayAvailable: true });
       } catch (reason) {
         debug("ice-config-refresh-failed", user.uid, null, { name: reason.name });
+        setError("Ses bağlantısı güvenli şekilde yenilenemedi. Lütfen odadan ayrılıp tekrar katıl.");
       }
     };
     const id = setInterval(refresh, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [status, user]);
+  }, [applyTurnCredentials, status, user]);
   useEffect(() => {
     if (status !== "connected") return;
     members

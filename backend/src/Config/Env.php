@@ -138,12 +138,21 @@ final class Env
 
     public function turnUrls(): array
     {
-        return array_values(array_filter(array_map('trim', explode(',', $this->get('TURN_URLS')))));
+        $configured = trim($this->get('TURN_URLS'));
+        if ($configured === '') {
+            return [
+                'turn:turn.dersrotasi.com:3478?transport=udp',
+                'turn:turn.dersrotasi.com:3478?transport=tcp',
+                'turns:turn.dersrotasi.com:5349?transport=tcp',
+            ];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $configured))));
     }
 
-    public function turnSecret(): string
+    public function turnSharedSecret(): string
     {
-        return trim($this->get('TURN_SECRET'));
+        return trim($this->get('TURN_SHARED_SECRET'));
     }
 
     public function pomodoroChatStorage(): string

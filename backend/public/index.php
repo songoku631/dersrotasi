@@ -200,8 +200,9 @@ try {
     if (str_starts_with($path, '/api/pomodoro')) {
         $uid = $authenticate()['uid'];
         $pomodoro = new PomodoroRepository($db());
-        if ($method === 'GET' && $path === '/api/pomodoro/voice/ice-config') {
-            JsonResponse::send(['success' => true, 'data' => (new TurnIceConfigService())->create($uid, $env->turnUrls(), $env->turnSecret())]);
+        if ($method === 'GET' && $path === '/api/pomodoro/turn-credentials') {
+            $pomodoro->rateTurnCredentials($uid);
+            JsonResponse::send((new TurnIceConfigService())->create($uid, $env->turnUrls(), $env->turnSharedSecret()));
         }
         if ($method === 'GET' && $path === '/api/pomodoro/rooms') {
             $items = $pomodoro->list($uid, (string) ($_GET['filter'] ?? 'all'));
