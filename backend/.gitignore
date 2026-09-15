@@ -3,3 +3,5 @@ firebase-service-account*.json
 credentials/
 public/uploads/profiles/*
 !public/uploads/profiles/.gitignore
+storage/pomodoro-chat-objects/*
+!storage/pomodoro-chat-objects/.gitignore

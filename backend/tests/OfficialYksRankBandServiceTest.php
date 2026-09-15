@@ -85,7 +85,7 @@ foreach (['placement' => 'Yerleştirme', 'exam' => 'Sınav'] as $scoreKind => $t
             'score_kind' => $scoreKind,
             'score' => 443,
         ]);
-        assertOfficialBand(count($coverage['years']) === 3, "{$scoreType} için üç yıl dönmeli.");
+        assertOfficialBand(array_column($coverage['years'], 'year') === [2026, 2025, 2024, 2023], "{$scoreType} için dört yıl dönmeli.");
         foreach ($coverage['years'] as $year) {
             assertOfficialBand($year['status'] === 'band', "{$scoreKind} {$scoreType} {$year['year']} bandı eksik.");
             assertOfficialBand($year['source']['publisher'] === 'ÖSYM', 'Kaynak provenance bilgisi eksik.');
@@ -102,4 +102,16 @@ try {
 }
 assertOfficialBand($invalidRejected, 'Geçersiz YKS puanı reddedilmeli.');
 
+$between2026 = officialBandYear($between, 2026);
+assertOfficialBand($between2026['rank_min'] === 63670 && $between2026['rank_max'] === 83511, '2026 Y-SAY 443 sınırları ÖSYM tablosuyla eşleşmeli.');
+assertOfficialBand(str_contains($between2026['source']['url'], '/2026/'), '2026 kaynağı başka bir yıla ait olmamalı.');
+$exam2026 = officialBandYear($examMaximum, 2026);
+assertOfficialBand($exam2026['rank_min'] === 1 && $exam2026['rank_max'] === 1, '2026 SAY 500 puan bir adaya karşılık gelmeli.');
+$config = require dirname(__DIR__) . '/config/yks/official_rank_distributions.php';
+foreach ($config['years'][2026]['placement']['rows'] as $index => $row) {
+    if ($index === 0) continue;
+    foreach ([1, 2, 3, 4] as $column) {
+        assertOfficialBand($row[$column] >= $config['years'][2026]['placement']['rows'][$index - 1][$column], 'Kümülatif aday sayıları azalamaz.');
+    }
+}
 echo "OfficialYksRankBandService tests passed.\n";

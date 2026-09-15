@@ -10,6 +10,15 @@ export function profileMediaUrl(path) {
   return apiUrl(path)
 }
 
+export async function authenticatedBlob(user, path, signal) {
+  if (!user) throw new Error('Bu işlem için giriş yapmalısın.')
+  const token = await user.getIdToken()
+  const response = await fetch(apiUrl(path), { signal, headers: { Authorization: `Bearer ${token}` } })
+  if (!response.ok) throw new Error(errorMessageForStatus(response.status))
+  if (response.headers.get('content-type') !== 'image/jpeg') throw new Error('Görsel biçimi geçersiz.')
+  return response.blob()
+}
+
 function errorMessageForStatus(status, responseMessage) {
   if (status === 401) return responseMessage || 'Oturum doğrulanamadı. Lütfen yeniden giriş yap.'
   if (status === 403) return 'Bu işlem için yetkin bulunmuyor.'

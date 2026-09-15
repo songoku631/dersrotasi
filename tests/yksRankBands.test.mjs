@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { officialBandPreferenceUrl } from '../src/utils/yksRankBands.js'
+import { officialBandPreferenceUrl, selectRankYear } from '../src/utils/yksRankBands.js'
+
+test('rank selection never falls back to a different score year', () => {
+  const response = { years: [{ year: 2026, rank_min: 63670 }, { year: 2025, rank_min: 46143 }] }
+  assert.equal(selectRankYear(response, 2025, 2025).rank_min, 46143)
+  assert.equal(selectRankYear(response, 2025, 2026), null)
+  assert.equal(selectRankYear(response, 2024, 2024), null)
+  assert.equal(selectRankYear(null, 2025, 2025), null)
+})
 
 test('resmî 2025 yerleştirme bandını tercih filtrelerine min/max olarak taşır', () => {
   const url = officialBandPreferenceUrl({

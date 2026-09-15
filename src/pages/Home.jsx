@@ -1,200 +1,97 @@
-import {
-  ArrowRight,
-  CheckCircle2,
-  ClipboardList,
-  Compass,
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-} from 'lucide-react'
-import Button from '../components/Button'
+import { ArrowUpRight, Bot, CalendarDays, GraduationCap, ListChecks, Send } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { getProfile } from '../api/client'
 import Container from '../components/Container'
-import ToolCard from '../components/ToolCard'
-import { tools } from '../data/tools'
+import { useAuth } from '../context/useAuth'
 
-const steps = [
-  {
-    title: 'Aracını seç',
-    text: 'YKS puan karşılaştırma, net hesaplama, pomodoro veya çalışma planı ekranına hızlıca geç.',
-  },
-  {
-    title: 'Bilgilerini gir',
-    text: 'Ders ve hedef bilgilerini sade formlarla ekleyerek sınav yolculuğunu görünür hale getir.',
-  },
-  {
-    title: 'Rotanı güncelle',
-    text: 'Sonuçlarını takip et, eksiklerini fark et ve çalışma düzenini daha bilinçli kur.',
-  },
+const suggestions = [
+  'Bana uygun üniversiteleri bul',
+  'Tercih listesi oluştur',
+  'Bölüm karşılaştır',
+  '2026 sıralamalarını incele',
 ]
 
-const reasons = [
-  {
-    title: 'Öğrenci odaklı',
-    text: 'Ekranlar hızlı anlaşılır, mobilde rahat kullanılır ve dikkat dağıtmadan çalışır.',
-    icon: Compass,
-  },
-  {
-    title: 'Güven veren yapı',
-    text: 'Net, plan ve hedef araçları tek bir düzen içinde, okunaklı kartlarla sunulur.',
-    icon: ShieldCheck,
-  },
-  {
-    title: 'Gelişime açık',
-    text: 'Frontend temeli hesaplama algoritmaları ve hesap sistemi eklenmeye hazırdır.',
-    icon: TrendingUp,
-  },
-]
-
-const faqs = [
-  {
-    question: 'Ders Rotası ücretsiz mi?',
-    answer: 'Temel YKS araçlarının ücretsiz kullanılabilmesi hedefleniyor.',
-  },
-  {
-    question: 'TYT net hesaplama çalışıyor mu?',
-    answer: 'Evet. Bu sürümde TYT doğru-yanlış girişleriyle ders bazlı ve toplam net hesaplanır.',
-  },
-  {
-    question: 'Mobilde kullanılabilir mi?',
-    answer: 'Evet. Sayfa yapısı telefon, tablet ve masaüstü ekranlara uyumlu hazırlandı.',
-  },
+const shortcuts = [
+  { title: 'Üniversite Tercih', text: 'Programları sıralama ve bölüme göre keşfet.', path: '/universite-tercih', icon: GraduationCap },
+  { title: 'Tercihlerim', text: 'Kaydettiğin tercih listesini düzenle.', path: '/tercihlerim', icon: ListChecks },
+  { title: 'Çalışma Planı', text: 'Hedefine uygun çalışma düzenini oluştur.', path: '/calisma-plani', icon: CalendarDays },
 ]
 
 function Home() {
+  const { authLoading, user } = useAuth()
+  const navigate = useNavigate()
+  const [profile, setProfile] = useState(null)
+  const [question, setQuestion] = useState('')
+
+  useEffect(() => {
+    if (!user) { setProfile(null); return undefined }
+    const controller = new AbortController()
+    getProfile(user, controller.signal)
+      .then((response) => setProfile(response.profile || null))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [user])
+
+  function askAi(message) {
+    const cleanMessage = message.trim()
+    if (!cleanMessage) return
+    const destination = { pathname: '/ai-asistan' }
+    if (!user) {
+      navigate('/giris', { state: { aiPrompt: cleanMessage, from: destination } })
+      return
+    }
+    navigate(destination, { state: { aiPrompt: cleanMessage } })
+  }
+
+  function submit(event) {
+    event.preventDefault()
+    askAi(question)
+  }
+
+  const visibleName = profile?.first_name || profile?.username || user?.displayName?.split(' ')[0]
+
   return (
     <>
-      <section className="hero-section">
-        <Container className="hero-section__grid">
-          <div className="hero-section__content">
-            <p className="eyebrow">Ders Rotası ile YKS kontrol paneli</p>
-            <h1>YKS yolculuğunu planla, netlerini hesapla, hedefini takip et</h1>
-            <p>
-              Ders Rotası; TYT net hesaplama, resmî YKS puan-sıralama karşılaştırma, pomodoro
-              ve çalışma planı araçlarını tek bir modern eğitim platformunda
-              toplamayı hedefler.
-            </p>
-            <div className="hero-section__actions">
-              <Button to="/yks-siralama-tahmini" icon={ArrowRight}>
-                YKS Puan - Sıralama
-              </Button>
-              <Button to="/calisma-plani" icon={ClipboardList} variant="secondary">
-                Çalışma Planı Oluştur
-              </Button>
-            </div>
-          </div>
+      <section className="home-ai">
+        <Container className="home-ai__inner">
+          <div className="home-ai__mark" aria-hidden="true"><Bot /></div>
+          <p className="eyebrow">Dersrotası AI</p>
+          <h1>
+            {!authLoading && user
+              ? `Merhaba${visibleName ? ` ${visibleName}` : ''} 👋 Bugün neye bakalım?`
+              : 'YKS tercihlerini birlikte planlayalım'}
+          </h1>
+          <p className="home-ai__intro">Sıralamanı, düşündüğün bölümü veya hedeflerini yaz; rotanı birlikte netleştirelim.</p>
 
-          <div className="hero-panel" aria-label="Ders Rotası örnek takip paneli">
-            <div className="route-card">
-              <span className="route-card__icon" aria-hidden="true">
-                <Compass size={28} />
-              </span>
-              <div>
-                <span>Bugünkü rota</span>
-                <strong>TYT deneme analizi</strong>
-              </div>
-            </div>
-            <div className="hero-metrics">
-              <div>
-                <span>Toplam hedef</span>
-                <strong>85 net</strong>
-              </div>
-              <div>
-                <span>Odak süresi</span>
-                <strong>4 saat</strong>
-              </div>
-            </div>
-            <div className="mini-bars" aria-hidden="true">
-              <span style={{ height: '58%' }}></span>
-              <span style={{ height: '74%' }}></span>
-              <span style={{ height: '46%' }}></span>
-              <span style={{ height: '86%' }}></span>
-              <span style={{ height: '64%' }}></span>
-            </div>
-            <div className="hero-panel__note">
-              <CheckCircle2 aria-hidden="true" size={18} />
-              <span>TYT net hesaplama artık çalışır durumda.</span>
-            </div>
+          <form className="home-ai__composer" onSubmit={submit}>
+            <textarea
+              aria-label="Dersrotası AI'ya sorunu yaz"
+              maxLength="1200"
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="140 bin sıralamayla İstanbul’da ne yazabilirim?"
+              rows="3"
+              value={question}
+            />
+            <button aria-label="Dersrotası AI'ya gönder" disabled={!question.trim()} type="submit"><Send /></button>
+          </form>
+
+          <div className="home-ai__suggestions" aria-label="Hızlı sorular">
+            {suggestions.map((suggestion) => <button key={suggestion} onClick={() => askAi(suggestion)} type="button">{suggestion}</button>)}
           </div>
         </Container>
       </section>
 
-      <section className="section">
+      <section className="home-shortcuts">
         <Container>
-          <div className="section-heading">
-            <p className="eyebrow">Araçlar</p>
-            <h2>YKS hazırlığında ihtiyacın olan temel ekranlar</h2>
-          </div>
-          <div className="tools-grid">
-            {tools.map((tool) => (
-              <ToolCard key={tool.path} {...tool} />
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      <section className="section section--tinted">
-        <Container>
-          <div className="section-heading">
-            <p className="eyebrow">Nasıl çalışır?</p>
-            <h2>Sınav hazırlığını küçük, takip edilebilir adımlara böler.</h2>
-          </div>
-          <div className="steps-grid">
-            {steps.map((step, index) => (
-              <article className="step-card" key={step.title}>
-                <span>{index + 1}</span>
-                <h3>{step.title}</h3>
-                <p>{step.text}</p>
-              </article>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      <section className="section">
-        <Container>
-          <div className="section-heading">
-            <p className="eyebrow">Neden Ders Rotası?</p>
-            <h2>Dağınık hesapları ve hedefleri tek, güvenilir arayüzde toplar.</h2>
-          </div>
-          <div className="reason-grid">
-            {reasons.map((reason) => (
-              <article className="reason-card" key={reason.title}>
-                <span className="reason-card__icon" aria-hidden="true">
-                  <reason.icon size={24} />
-                </span>
-                <h3>{reason.title}</h3>
-                <p>{reason.text}</p>
-              </article>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      <section className="free-banner">
-        <Container className="free-banner__inner">
-          <Sparkles aria-hidden="true" size={28} />
-          <div>
-            <h2>Temel araçlar ücretsiz kullanım odağıyla tasarlanıyor.</h2>
-            <p>
-              Ders Rotası, hesaplama ve planlama deneyimini sonraki aşamalarda
-              daha kapsamlı sonuç ekranlarıyla geliştirmeye hazır.
-            </p>
-          </div>
-        </Container>
-      </section>
-
-      <section className="section">
-        <Container>
-          <div className="section-heading">
-            <p className="eyebrow">SSS</p>
-            <h2>Sık sorulan sorular</h2>
-          </div>
-          <div className="faq-list">
-            {faqs.map((faq) => (
-              <article className="faq-item" key={faq.question}>
-                <h3>{faq.question}</h3>
-                <p>{faq.answer}</p>
-              </article>
+          <p className="home-shortcuts__label">Hızlı erişim</p>
+          <div className="home-shortcuts__grid">
+            {shortcuts.map(({ icon: Icon, path, text, title }) => (
+              <Link className="home-shortcut" key={path} to={path}>
+                <span><Icon aria-hidden="true" /></span>
+                <div><strong>{title}</strong><small>{text}</small></div>
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
             ))}
           </div>
         </Container>

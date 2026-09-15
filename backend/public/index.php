@@ -20,6 +20,8 @@ use DersRotasi\Database\Connection;
 use DersRotasi\Http\JsonResponse;
 use DersRotasi\Http\Request;
 use DersRotasi\Middleware\FirebaseAuthMiddleware;
+use DersRotasi\Pomodoro\PomodoroRepository;
+use DersRotasi\Pomodoro\TurnIceConfigService;
 use DersRotasi\Repositories\FavoriteRepository;
 use DersRotasi\Repositories\PreferenceRepository;
 use DersRotasi\Repositories\ProfileRepository;
@@ -32,6 +34,9 @@ use DersRotasi\Services\OfficialYksRankBandService;
 use DersRotasi\Services\PremiumAiSummaryService;
 use DersRotasi\Services\PremiumAnalysisService;
 use DersRotasi\Services\ProfilePhotoStorage;
+use DersRotasi\Services\PomodoroChatImageStorage;
+use DersRotasi\Services\GcsPomodoroChatObjectStorage;
+use DersRotasi\Services\LocalPomodoroChatObjectStorage;
 use DersRotasi\Services\StudyPlanGenerationService;
 use DersRotasi\Services\PreferenceEvaluationService;
 use DersRotasi\Services\YksBacktestConfidenceService;
@@ -68,6 +73,10 @@ $auth = new FirebaseAuthMiddleware(new FirebaseTokenVerifier(
     $env->sslCaBundle()
 ));
 $authenticate = static fn (): array => $auth->authenticate($request);
+$pomodoroObjects = static function () use ($env, $root) {
+    if ($env->pomodoroChatStorage() === 'local') return new LocalPomodoroChatObjectStorage($root . '/storage/pomodoro-chat-objects');
+    return new GcsPomodoroChatObjectStorage($env->pomodoroChatGcsBucket());
+};
 $positiveId = static function (mixed $value, string $field = 'id'): int {
     $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
     if ($id === false) {
@@ -186,6 +195,53 @@ try {
             'service' => 'Ders Rotası API',
             'environment' => $env->appEnv(),
         ]);
+    }
+
+    if (str_starts_with($path, '/api/pomodoro')) {
+        $uid = $authenticate()['uid'];
+        $pomodoro = new PomodoroRepository($db());
+        if ($method === 'GET' && $path === '/api/pomodoro/turn-credentials') {
+            $pomodoro->rateTurnCredentials($uid);
+            JsonResponse::send((new TurnIceConfigService())->create($uid, $env->turnUrls(), $env->turnSharedSecret()));
+        }
+        if ($method === 'GET' && $path === '/api/pomodoro/rooms') {
+            $items = $pomodoro->list($uid, (string) ($_GET['filter'] ?? 'all'));
+            JsonResponse::send(['success' => true, 'data' => ['items' => $items, 'stats' => $pomodoro->stats($uid)]]);
+        }
+        if ($method === 'POST' && $path === '/api/pomodoro/rooms') {
+            JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->create($uid, $request->json())]], 201);
+        }
+        if ($method === 'GET' && $path === '/api/pomodoro/stats') {
+            JsonResponse::send(['success' => true, 'data' => $pomodoro->stats($uid)]);
+        }
+        if (preg_match('#^/api/pomodoro/rooms/(\d+)/messages/(\d+)/image$#', $path, $imageMatch) && $method === 'GET') {
+            $image=$pomodoro->imageAttachment($uid,(int)$imageMatch[1],(int)$imageMatch[2]);
+            $bytes=$pomodoroObjects()->get($image['path']);
+            header('Content-Type: image/jpeg');header('Content-Length: '.strlen($bytes));header('Cache-Control: private, max-age=3600');header('X-Content-Type-Options: nosniff');
+            echo $bytes;exit;
+        }
+        if (preg_match('#^/api/pomodoro/rooms/(\d+)(?:/(join|leave|heartbeat|timer|music|music/action|signals|moderation|messages|messages/image))?$#', $path, $m)) {
+            $id = (int) $m[1]; $action = $m[2] ?? '';
+            if ($method === 'GET' && $action === '') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->get($uid, $id), 'server_now' => gmdate('c')]]);
+            if ($method === 'POST' && $action === 'join') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->join($uid, $id, (string) ($request->json()['password'] ?? ''))]]);
+            if ($method === 'POST' && $action === 'leave') { $pomodoro->leave($uid, $id); JsonResponse::send(['success' => true]); }
+            if ($method === 'POST' && $action === 'heartbeat') { $pomodoro->heartbeat($uid, $id, (bool) ($request->json()['microphone_enabled'] ?? false)); JsonResponse::send(['success' => true]); }
+            if ($method === 'POST' && $action === 'timer') JsonResponse::send(['success' => true, 'data' => ['room' => $pomodoro->timer($uid, $id, $request->json())]]);
+            if ($method === 'POST' && $action === 'music') { $pomodoro->addMusic($uid, $id, $request->json()); JsonResponse::send(['success' => true], 201); }
+            if ($method === 'POST' && $action === 'music/action') { $pomodoro->musicAction($uid, $id, (string) ($request->json()['action'] ?? '')); JsonResponse::send(['success' => true]); }
+            if ($action === 'signals' && $method === 'POST') { $pomodoro->signal($uid, $id, $request->json()); JsonResponse::send(['success' => true], 201); }
+            if ($action === 'signals' && $method === 'GET') JsonResponse::send(['success' => true, 'data' => ['items' => $pomodoro->signals($uid, $id, max(0, (int) ($_GET['after'] ?? 0)))]]);
+            if ($action === 'moderation' && $method === 'POST') { $pomodoro->moderate($uid, $id, $request->json()); JsonResponse::send(['success' => true]); }
+            if ($action === 'messages' && $method === 'GET') JsonResponse::send(['success' => true, 'data' => ['items' => $pomodoro->messages($uid, $id, max(0, (int) ($_GET['after'] ?? 0)))]]);
+            if ($action === 'messages' && $method === 'POST') JsonResponse::send(['success' => true, 'data' => ['message' => $pomodoro->sendMessage($uid, $id, $request->json())]], 201);
+            if ($action === 'messages/image' && $method === 'POST') {
+                $pomodoro->assertActiveMember($uid,$id);
+                $storage=new PomodoroChatImageStorage($root,new OpenAiModerationClient($env->openAiApiKey(),$env->openAiModerationModel(),$env->openAiTimeout(),$env->sslCaBundle()),$pomodoroObjects());
+                $image=$storage->store($_FILES['image']??[],$id);
+                try{$message=$pomodoro->sendImageMessage($uid,$id,$image,(string)($_POST['message']??''));}catch(Throwable $exception){$storage->discard($image['path']);throw $exception;}
+                JsonResponse::send(['success'=>true,'data'=>['message'=>$message]],201);
+            }
+        }
     }
 
     if ($method === 'GET' && $path === '/api/me') {

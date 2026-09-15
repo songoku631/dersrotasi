@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   createAiConversation,
   getAiConversation,
@@ -115,7 +115,7 @@ function ConversationSidebar({
   )
 }
 
-function AiConversation({ plan, refreshPlan, user }) {
+function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
   const [conversations, setConversations] = useState([])
   const [activeConversationId, setActiveConversationId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -133,6 +133,8 @@ function AiConversation({ plan, refreshPlan, user }) {
   const messagesRef = useRef(null)
   const requestRef = useRef(null)
   const historyRequestRef = useRef(null)
+  const initialMessageRef = useRef(initialMessage)
+  const submitRef = useRef(null)
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -326,6 +328,15 @@ function AiConversation({ plan, refreshPlan, user }) {
       submit(draft)
     }
   }
+
+  submitRef.current = submit
+
+  useEffect(() => {
+    if (historyStatus !== 'idle' || !activeConversationId || !initialMessageRef.current) return
+    const message = initialMessageRef.current
+    initialMessageRef.current = ''
+    submitRef.current(message)
+  }, [activeConversationId, historyStatus])
 
   function updateProgramFavorite(program, isFavorite) {
     setMessages((current) => current.map((message) => ({
@@ -566,6 +577,14 @@ function AiAccessCard() {
 function AiAssistantPage() {
   const { authLoading, user } = useAuth()
   const { error: planError, loading: planLoading, plan, refresh } = useUserPlan(user)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const initialMessage = location.state?.aiPrompt || ''
+  const initialMessageRef = useRef(initialMessage)
+
+  useEffect(() => {
+    if (initialMessage) navigate(location.pathname, { replace: true, state: null })
+  }, [initialMessage, location.pathname, navigate])
 
   return (
     <>
@@ -593,7 +612,7 @@ function AiAssistantPage() {
             </div>
           ) : null}
           {!authLoading && user && plan ? (
-            <AiConversation key={user.uid} plan={plan} refreshPlan={refresh} user={user} />
+            <AiConversation initialMessage={initialMessageRef.current} key={user.uid} plan={plan} refreshPlan={refresh} user={user} />
           ) : null}
         </Container>
       </section>

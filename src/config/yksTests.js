@@ -1,5 +1,3 @@
-export const YKS_YEAR = 2025
-
 export const YKS_TESTS = {
   tyt_turkish: { label: 'Türkçe', questions: 40 },
   tyt_social: { label: 'Sosyal Bilimler', questions: 20 },
@@ -15,10 +13,9 @@ export const YKS_TESTS = {
   ayt_history_2: { label: 'Tarih-2', questions: 11 },
   ayt_geography_2: { label: 'Coğrafya-2', questions: 11 },
   ayt_philosophy: { label: 'Felsefe Grubu', questions: 12 },
-  ayt_religion: { label: 'Din Kültürü / İlave Felsefe', questions: 6 },
+  ayt_religion: { label: 'DKAB / İlave Felsefe', questions: 6 },
   ydt_language: { label: 'Yabancı Dil', questions: 80 },
 }
-
 const tyt = ['tyt_turkish', 'tyt_social', 'tyt_math', 'tyt_science']
 
 export const YKS_SCORE_TYPES = {
@@ -27,9 +24,4 @@ export const YKS_SCORE_TYPES = {
   'SÖZ': { label: 'Sözel', tests: [...tyt, 'ayt_literature', 'ayt_history_1', 'ayt_geography_1', 'ayt_history_2', 'ayt_geography_2', 'ayt_philosophy', 'ayt_religion'] },
   'DİL': { label: 'Dil', tests: [...tyt, 'ydt_language'] },
   TYT: { label: 'Yalnızca TYT', tests: tyt },
-}
-
-export function liveNet(value = {}, mode = 'correct_wrong') {
-  if (mode === 'net') return Number(value.net || 0)
-  return Number(value.correct || 0) - Number(value.wrong || 0) / 4
 }

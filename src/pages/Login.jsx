@@ -5,13 +5,12 @@ import { useAuth } from '../context/useAuth'
 
 function Login() {
   const location = useLocation()
-  const { authLoading, error, loginWithApple, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
+  const { authLoading, error, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState('')
   const [localError, setLocalError] = useState('')
   const [message, setMessage] = useState('')
-
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
   if (user) return <Navigate replace to="/" />
 
@@ -43,7 +42,6 @@ function Login() {
         {message ? <div className="success-alert" role="status"><p>{message}</p></div> : null}
         <div className="auth-socials">
           <button disabled={Boolean(busy)} onClick={() => run(loginWithGoogle, 'google')} type="button"><span className="auth-provider auth-provider--google">G</span>{busy === 'google' ? 'Bağlanıyor...' : 'Google ile devam et'}</button>
-          <button disabled={Boolean(busy)} onClick={() => run(loginWithApple, 'apple')} type="button"><span className="auth-provider auth-provider--apple">●</span>{busy === 'apple' ? 'Bağlanıyor...' : 'Apple ile devam et'}</button>
         </div>
         <div className="auth-divider"><span>veya</span></div>
         <form className="auth-form" onSubmit={handleSubmit}>
