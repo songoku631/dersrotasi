@@ -19,13 +19,14 @@ $username = 'user_' . $suffix;
 
 $pdo->beginTransaction();
 try {
-    $repository->save($firstUid, [
+    $profileWithoutUsername = $repository->save($firstUid, [
         'target_department' => 'Tıp',
         'first_name' => 'Deniz',
         'birth_year' => 2005,
         'education_status' => 'universite',
         'city' => 'İstanbul',
     ]);
+    assert($profileWithoutUsername['username'] === null);
     $profile = $repository->save($firstUid, ['username' => $username]);
     assert($profile['username'] === $username);
     assert($profile['target_department'] === 'Tıp');

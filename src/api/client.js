@@ -97,10 +97,6 @@ export function saveProfile(user, profile, signal) {
   return apiRequest('/api/profile', { user, auth: true, method: 'PUT', body: profile, signal })
 }
 
-export function saveUsername(user, username, signal) {
-  return saveProfile(user, { username }, signal)
-}
-
 export async function uploadProfilePhoto(user, file) {
   if (!user) throw new Error('Bu işlem için giriş yapmalısın.')
   const token = await user.getIdToken()

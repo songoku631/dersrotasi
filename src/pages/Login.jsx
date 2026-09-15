@@ -13,7 +13,7 @@ function Login() {
   const [message, setMessage] = useState('')
 
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
-  if (user) return <Navigate replace to="/kullanici-adi" />
+  if (user) return <Navigate replace to="/" />
 
   async function run(action, name) {
     setBusy(name); setLocalError(''); setMessage('')

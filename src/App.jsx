@@ -5,7 +5,6 @@ import AiAssistantPage from './pages/AiAssistantPage'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import UsernameSetup from './pages/UsernameSetup'
 import NotFound from './pages/NotFound'
 import PlaceholderPage from './pages/PlaceholderPage'
 import PreferencesPage from './pages/PreferencesPage'
@@ -54,7 +53,6 @@ function App() {
           />
         ))}
         <Route element={<ProtectedRoute />}>
-          <Route path="/kullanici-adi" element={<UsernameSetup />} />
           <Route path="/profil" element={<ProfilePage />} />
           <Route path="/premium" element={<PremiumPage />} />
           <Route path="/favorilerim" element={<FavoritesPage />} />
@@ -64,6 +62,7 @@ function App() {
         <Route path="/giris" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/kayit" element={<Register />} />
+        <Route path="/kullanici-adi" element={<Navigate replace to="/" />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

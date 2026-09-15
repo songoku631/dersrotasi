@@ -116,7 +116,7 @@ function ProfilePage() {
           </div> : <form className="profile-form" onSubmit={submit}>
             <fieldset className="profile-form__fields" disabled={status !== 'ready'}>
               <h3>Temel bilgiler</h3><div className="profile-form__grid">
-                <Field label="Kullanıcı adı"><input autoCapitalize="none" maxLength="24" pattern="[a-z0-9_]{3,24}" required value={draft.username || ''} onChange={(e) => update('username', e.target.value.toLowerCase())} /></Field>
+                <Field label="Kullanıcı adı"><input autoCapitalize="none" maxLength="24" pattern="[a-z0-9_]{3,24}" value={draft.username || ''} onChange={(e) => update('username', e.target.value.toLowerCase())} /></Field>
                 <Field label="E-posta"><input disabled type="email" value={user.email || ''} /></Field>
                 <Field label="İsim"><input maxLength="80" value={draft.first_name} onChange={(e) => update('first_name', e.target.value)} /></Field>
                 <Field label="Soyisim"><input maxLength="80" value={draft.last_name} onChange={(e) => update('last_name', e.target.value)} /></Field>

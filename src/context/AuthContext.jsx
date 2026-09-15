@@ -5,7 +5,6 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
-  updateProfile,
 } from 'firebase/auth'
 import { useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './AuthContextObject'
@@ -128,13 +127,11 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function registerWithEmail(email, password, displayName) {
+  async function registerWithEmail(email, password) {
     setError('')
     if (!auth) throw new Error(missingConfigMessage)
     try {
-      const result = await createUserWithEmailAndPassword(auth, email.trim(), password)
-      await updateProfile(result.user, { displayName: displayName.trim() })
-      return result.user
+      return (await createUserWithEmailAndPassword(auth, email.trim(), password)).user
     } catch (authError) {
       const message = getAuthErrorMessage(authError)
       setError(message)
