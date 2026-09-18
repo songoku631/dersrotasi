@@ -421,9 +421,9 @@ try {
         }
         $reservedTokens = max(1, (int) ceil($inputCharacters / 4)) + $env->aiMaxOutputTokens();
         if ($plan['plan'] === 'free') {
-            $freePerMessageTokenAllowance = (int) ceil(
-                $plan['limits']['daily_token_budget'] / $plan['limits']['daily_requests']
-            );
+            $freePerMessageTokenAllowance = max(1, intdiv(
+                $plan['limits']['daily_token_budget'], $plan['limits']['daily_requests']
+            ));
             $reservedTokens = max($reservedTokens, $freePerMessageTokenAllowance);
         }
         $reservation = $usageStore->reserve(

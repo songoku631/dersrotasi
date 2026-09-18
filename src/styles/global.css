@@ -3934,18 +3934,6 @@ main {
   }
 }
 
-.ai-assistant__quota {
-  display: grid;
-  margin-left: auto;
-  justify-items: end;
-  text-align: right;
-}
-
-.ai-assistant__quota strong {
-  color: var(--purple-dark);
-  font-size: 0.8rem;
-}
-
 .ai-assistant__error a {
   display: inline-block;
   margin-left: 1rem;
@@ -4292,7 +4280,6 @@ main {
 
 @media (max-width: 700px) {
   .premium-grid { grid-template-columns: 1fr; }
-  .ai-assistant__quota { max-width: 110px; }
   .preferences-premium-toolbar { align-items: stretch; flex-direction: column; }
   .preferences-premium-toolbar .button { width: 100%; }
   .premium-analysis { padding: 0.8rem; }

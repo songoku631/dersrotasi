@@ -81,19 +81,23 @@ temporaryPlanTables($pdo);
 $store = new PdoAiUsageStore($pdo);
 $subscriptions = new SubscriptionRepository($pdo);
 $roles = new UserRoleRepository($pdo);
-$freeLimits = ['daily_requests' => 5, 'daily_token_budget' => 40000];
-$premiumLimits = ['daily_requests' => 50, 'daily_token_budget' => 60000];
+$freeLimits = ['daily_requests' => 15, 'daily_token_budget' => 40000];
+$premiumLimits = ['daily_requests' => 100, 'daily_token_budget' => 60000];
 
 $catalog = new PlanCatalog(new Env([
-    'AI_FREE_DAILY_REQUESTS' => '5', 'AI_FREE_DAILY_TOKEN_BUDGET' => '40000',
-    'AI_FREE_MAX_MESSAGE_CHARS' => '1200', 'AI_PREMIUM_DAILY_REQUESTS' => '50',
+    'AI_FREE_DAILY_REQUESTS' => '15', 'AI_FREE_DAILY_TOKEN_BUDGET' => '40000',
+    'AI_FREE_MAX_MESSAGE_CHARS' => '1200', 'AI_PREMIUM_DAILY_REQUESTS' => '100',
     'AI_PREMIUM_DAILY_TOKEN_BUDGET' => '60000', 'AI_PREMIUM_MAX_MESSAGE_CHARS' => '2500',
     'AI_MAX_OUTPUT_TOKENS' => '500',
 ]));
-planCheck($catalog->limits('free')['daily_requests'] === 5, 'Free daily request limit is wrong.');
+planCheck($catalog->limits('free')['daily_requests'] === 15, 'Free daily request limit is wrong.');
+planCheck(
+    (new PlanCatalog(new Env(['AI_FREE_DAILY_TOKEN_BUDGET' => '40000'])))->limits('free')['daily_requests'] === 15,
+    'Free daily request default limit is wrong.'
+);
 planCheck($catalog->limits('free')['daily_token_budget'] === 40000, 'Free daily token budget is wrong.');
 planCheck($catalog->limits('free')['max_message_chars'] === 1200, 'Free mesaj sınırı yanlış.');
-planCheck($catalog->limits('premium')['daily_requests'] === 50, 'Premium mesaj hakkı yanlış.');
+planCheck($catalog->limits('premium')['daily_requests'] === 100, 'Premium mesaj hakkı yanlış.');
 
 $missingHash = hash('sha256', 'missing-user');
 planCheck($subscriptions->activePlan($missingHash)['plan_code'] === 'free', 'Kayıtsız kullanıcı free olmalı.');
@@ -126,19 +130,29 @@ $pdo->prepare(
 planCheck($subscriptions->activePlan($futureHash)['plan_code'] === 'free', 'Başlamamış Premium free olmalı.');
 
 $freeHash = hash('sha256', 'free-user');
-for ($index = 1; $index <= 5; $index++) {
+for ($index = 1; $index <= 15; $index++) {
     $requestHash = hash('sha256', 'free-request-' . $index);
-    $reserved = $store->reserve($freeHash, $requestHash, 'free', $freeLimits, 8000, 200000);
+    $reserved = $store->reserve($freeHash, $requestHash, 'free', $freeLimits, 2666, 200000);
     planCheck($reserved['state'] === 'reserved', 'Free istek rezerve edilemedi.');
-    $store->complete($freeHash, $requestHash, 7014, ['success' => true, 'answer' => 'ok-' . $index]);
+    $store->complete($freeHash, $requestHash, 2000, ['success' => true, 'answer' => 'ok-' . $index]);
     $freePlan = (new UserPlanService($subscriptions, $catalog, $store, $roles))->forUid('free-user');
     planCheck($freePlan['usage']['requests_used'] === $index, 'Free usage count must come from the database.');
-    planCheck($freePlan['usage']['requests_remaining'] === 5 - $index, 'Free remaining request count is wrong.');
+    planCheck($freePlan['usage']['requests_remaining'] === 15 - $index, 'Free remaining request count is wrong.');
 }
-planThrows(
-    fn () => $store->reserve($freeHash, hash('sha256', 'free-request-6'), 'free', $freeLimits, 8000, 200000),
-    429,
-    'Free altıncı istek'
+try {
+    $store->reserve($freeHash, hash('sha256', 'free-request-16'), 'free', $freeLimits, 2666, 200000);
+    throw new RuntimeException('Free on altıncı istek için hata fırlatılmadı.');
+} catch (RuntimeException $exception) {
+    planCheck($exception->getCode() === 429, 'Free on altıncı istek için HTTP kodu hatalı.');
+    planCheck(
+        $exception->getMessage() === 'Günlük ücretsiz mesaj hakkınızı kullandınız. Daha fazla mesaj için Premium plana geçebilirsiniz.',
+        'Free limit mesajı kullanıcıya anlaşılır Premium yönlendirmesi sunmalı.'
+    );
+}
+$freePlanAfterReload = (new UserPlanService($subscriptions, $catalog, $store, $roles))->forUid('free-user');
+planCheck(
+    $freePlanAfterReload['usage']['requests_used'] === 15 && $freePlanAfterReload['usage']['requests_remaining'] === 0,
+    'Aynı kullanıcı için yenileme veya yeniden giriş günlük free limiti sıfırlamamalı.'
 );
 
 $adminHash = hash('sha256', 'admin-user');
@@ -173,16 +187,21 @@ planCheck(
     'Aynı request_id cache dönmeli.'
 );
 
-for ($index = 1; $index <= 50; $index++) {
+for ($index = 1; $index <= 100; $index++) {
     $requestHash = hash('sha256', 'premium-request-' . $index);
     $store->reserve($premiumHash, $requestHash, 'premium', $premiumLimits, 1, 200000);
     $store->complete($premiumHash, $requestHash, 1, ['success' => true]);
 }
-planThrows(
-    fn () => $store->reserve($premiumHash, hash('sha256', 'premium-request-51'), 'premium', $premiumLimits, 1, 200000),
-    429,
-    'Premium elli birinci istek'
-);
+try {
+    $store->reserve($premiumHash, hash('sha256', 'premium-request-101'), 'premium', $premiumLimits, 1, 200000);
+    throw new RuntimeException('Premium yüz birinci istek için hata fırlatılmadı.');
+} catch (RuntimeException $exception) {
+    planCheck($exception->getCode() === 429, 'Premium yüz birinci istek için HTTP kodu hatalı.');
+    planCheck(
+        $exception->getMessage() === 'Bugünkü Premium AI mesaj hakkınızı kullandınız. Mesaj hakkınız günlük olarak yenilenir.',
+        'Premium limit mesajı kullanıcıya günlük yenilenme bilgisini vermeli.'
+    );
+}
 
 $oldDayHash = hash('sha256', 'day-reset-user');
 $pdo->prepare('INSERT INTO ai_daily_usage VALUES (:hash, :day, 3, 6000)')->execute([

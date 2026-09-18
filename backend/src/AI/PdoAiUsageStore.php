@@ -56,8 +56,8 @@ final class PdoAiUsageStore
             if ($enforceUserLimits && $daily['request_count'] >= (int) $limits['daily_requests']) {
                 throw new RuntimeException(
                     $planCode === 'premium'
-                        ? 'Premium günlük AI mesaj hakkın doldu. Yarın tekrar deneyebilirsin.'
-                        : 'Ücretsiz günlük AI mesaj hakkın doldu. Premium planı inceleyebilir veya yarın tekrar deneyebilirsin.',
+                        ? 'Bugünkü Premium AI mesaj hakkınızı kullandınız. Mesaj hakkınız günlük olarak yenilenir.'
+                        : 'Günlük ücretsiz mesaj hakkınızı kullandınız. Daha fazla mesaj için Premium plana geçebilirsiniz.',
                     429
                 );
             }

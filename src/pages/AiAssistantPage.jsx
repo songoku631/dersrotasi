@@ -35,6 +35,15 @@ const suggestions = [
   'Tercih listesi oluştur',
 ]
 
+const freeDailyMessageLimit =
+  'Günlük ücretsiz mesaj hakkınızı kullandınız. Daha fazla mesaj için Premium plana geçebilirsiniz.'
+const premiumDailyMessageLimit =
+  'Bugünkü Premium AI mesaj hakkınızı kullandınız. Mesaj hakkınız günlük olarak yenilenir.'
+
+function currentUsageDate() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function conversationDate(conversation) {
   const value = conversation.last_message_at || conversation.created_at
   const date = value ? new Date(value) : null
@@ -129,12 +138,15 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
   const [failedRequestId, setFailedRequestId] = useState('')
   const [busyProgramId, setBusyProgramId] = useState(null)
   const [programAction, setProgramAction] = useState(null)
+  const [dailyLimitReached, setDailyLimitReached] = useState(null)
   const textareaRef = useRef(null)
   const messagesRef = useRef(null)
   const requestRef = useRef(null)
   const historyRequestRef = useRef(null)
   const initialMessageRef = useRef(initialMessage)
   const submitRef = useRef(null)
+  const freeDailyLimitReached = dailyLimitReached?.plan === 'free' && dailyLimitReached.date === currentUsageDate()
+  const premiumDailyLimitReached = dailyLimitReached?.plan === 'premium' && dailyLimitReached.date === currentUsageDate()
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -258,7 +270,7 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
 
   async function submit(message, appendUser = true, existingRequestId = '') {
     const cleanMessage = message.trim()
-    if (!cleanMessage || status === 'loading' || historyStatus !== 'idle' || !activeConversationId) return
+    if (!cleanMessage || freeDailyLimitReached || premiumDailyLimitReached || status === 'loading' || historyStatus !== 'idle' || !activeConversationId) return
 
     const previousMessages = appendUser ? messages : messages.slice(0, -1)
     if (appendUser) {
@@ -307,7 +319,17 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
       refreshPlan()
     } catch (requestError) {
       if (requestError.name === 'AbortError') return
-      setError(requestError.message)
+      const reachedFreeDailyLimit = requestError.status === 429 && requestError.message === freeDailyMessageLimit
+      const reachedPremiumDailyLimit = requestError.status === 429 && requestError.message === premiumDailyMessageLimit
+      if (reachedFreeDailyLimit) setDailyLimitReached({ plan: 'free', date: currentUsageDate() })
+      if (reachedPremiumDailyLimit) setDailyLimitReached({ plan: 'premium', date: currentUsageDate() })
+      setError(
+        reachedFreeDailyLimit
+          ? freeDailyMessageLimit
+          : reachedPremiumDailyLimit
+            ? premiumDailyMessageLimit
+            : requestError.message,
+      )
       setFailedMessage(cleanMessage)
       setFailedRequestId(requestError.status ? '' : requestId)
       setStatus('error')
@@ -398,19 +420,6 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
           <strong>Dersrotası AI</strong>
           <small>Sıralaman, hedeflerin ve tercihlerin için burada.</small>
         </div>
-        <div className="ai-assistant__quota" aria-live="polite">
-          {plan?.is_admin ? (
-            <strong>Admin • Sınırsız test</strong>
-          ) : (
-            <>
-              <strong>{plan?.is_premium ? 'Premium' : 'Ücretsiz'}</strong>
-              <small>
-                Bugün {plan?.limits?.daily_requests ?? 0} mesaj hakkından{' '}
-                {plan?.usage?.requests_remaining ?? 0} kaldı
-              </small>
-            </>
-          )}
-        </div>
       </header>
 
       <div aria-live="polite" className="ai-assistant__messages" ref={messagesRef}>
@@ -438,7 +447,7 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
             <div className="ai-assistant__chips">
               {suggestions.map((suggestion) => (
                 <button
-                  disabled={status === 'loading' || historyStatus !== 'idle'}
+                  disabled={freeDailyLimitReached || premiumDailyLimitReached || status === 'loading' || historyStatus !== 'idle'}
                   key={suggestion}
                   onClick={() => submit(suggestion)}
                   type="button"
@@ -495,14 +504,16 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
           </div>
         ) : null}
 
-        {error ? (
+        {error || freeDailyLimitReached || premiumDailyLimitReached ? (
           <div className="ai-assistant__error" role="alert">
-            <p>{error}</p>
-            <button onClick={() => submit(failedMessage, false, failedRequestId)} type="button">
-              <RotateCcw aria-hidden="true" /> Tekrar dene
-            </button>
-            {!plan?.is_admin && !plan?.is_premium && error.toLocaleLowerCase('tr-TR').includes('günlük') ? (
-              <Link to="/premium">Premium planı incele</Link>
+            <p>{freeDailyLimitReached ? freeDailyMessageLimit : premiumDailyLimitReached ? premiumDailyMessageLimit : error}</p>
+            {!freeDailyLimitReached && !premiumDailyLimitReached ? (
+              <button onClick={() => submit(failedMessage, false, failedRequestId)} type="button">
+                <RotateCcw aria-hidden="true" /> Tekrar dene
+              </button>
+            ) : null}
+            {freeDailyLimitReached ? (
+              <Link to="/premium">Premium’a Geç</Link>
             ) : null}
           </div>
         ) : null}
@@ -511,7 +522,7 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
       <form className="ai-assistant__composer" onSubmit={handleSubmit}>
         <textarea
           aria-label="Dersrotası AI'ya mesaj"
-          disabled={status === 'loading' || historyStatus !== 'idle' || !activeConversationId}
+          disabled={freeDailyLimitReached || premiumDailyLimitReached || status === 'loading' || historyStatus !== 'idle' || !activeConversationId}
           maxLength={plan?.limits?.max_message_chars ?? 1200}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -521,7 +532,7 @@ function AiConversation({ initialMessage = '', plan, refreshPlan, user }) {
           value={draft}
         />
         <button
-          disabled={status === 'loading' || historyStatus !== 'idle' || !activeConversationId || !draft.trim()}
+          disabled={freeDailyLimitReached || premiumDailyLimitReached || status === 'loading' || historyStatus !== 'idle' || !activeConversationId || !draft.trim()}
           type="submit"
         >
           <Send aria-hidden="true" />
