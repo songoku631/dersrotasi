@@ -201,6 +201,36 @@ test('checkbox filtrelerini array URL parametreleriyle saklar ve yenilemede geri
   assert.equal(restored.has('page'), false)
 })
 
+test('mobil filtre seçimleri URL ve API parametrelerinde korunur', () => {
+  const selected = changeUniversitySearchParams(new URLSearchParams('page=3'), {
+    city: ['İZMİR'],
+    score_type: ['say'],
+    university_type: ['devlet'],
+    education_type: ['orgun'],
+    scholarship_type: ['burslu'],
+    education_language: ['İngilizce'],
+    page: 1,
+  })
+  const restored = new URLSearchParams(selected.toString())
+
+  assert.deepEqual(multiFilterValues(restored, 'city'), ['İZMİR'])
+  assert.deepEqual(multiFilterValues(restored, 'score_type'), ['say'])
+  assert.deepEqual(multiFilterValues(restored, 'university_type'), ['devlet'])
+  assert.deepEqual(multiFilterValues(restored, 'education_type'), ['orgun'])
+  assert.deepEqual(multiFilterValues(restored, 'scholarship_type'), ['burslu'])
+  assert.deepEqual(multiFilterValues(restored, 'education_language'), ['İngilizce'])
+  assert.deepEqual(universityApiParams(restored), {
+    city: ['İZMİR'],
+    score_type: ['say'],
+    university_type: ['devlet'],
+    education_type: ['orgun'],
+    scholarship_type: ['burslu'],
+    education_language: ['İngilizce'],
+    sort: 'rank_2026_asc',
+  })
+  assert.equal(restored.has('page'), false)
+})
+
 test('kategori temizleme hem eski hem array URL değerlerini kaldırır', () => {
   const current = new URLSearchParams('city=BURSA&city%5B%5D=ANKARA&score_type%5B%5D=say')
   const cleared = changeUniversitySearchParams(current, { city: [], page: 1 })

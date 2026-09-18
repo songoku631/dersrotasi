@@ -70,10 +70,15 @@ function CheckboxFilter({
     }
   }
 
-  function handleBlur(event) {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-      closePanel()
-    }
+  function handleBlur() {
+    // Mobile Safari may report a null relatedTarget before a checkbox change
+    // completes. Waiting for the focus transition keeps the option mounted so
+    // the controlled value and URL update can finish.
+    window.setTimeout(() => {
+      if (!rootRef.current?.contains(document.activeElement)) {
+        closePanel()
+      }
+    }, 0)
   }
 
   const selectedSummary = values.length === 0
