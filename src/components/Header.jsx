@@ -1,7 +1,8 @@
-import { ChevronDown, LogIn, Menu, X } from 'lucide-react'
+import { ChevronDown, Crown, LogIn, Menu, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
+import { useUserPlan } from '../hooks/useUserPlan'
 import { getProfile, profileMediaUrl } from '../api/client'
 import Logo from './brand/Logo'
 import Button from './Button'
@@ -16,6 +17,8 @@ function Header() {
   const location = useLocation()
   const navigate = useNavigate()
   const { authLoading, isAuthenticated, logout, user } = useAuth()
+  const { plan } = useUserPlan(user)
+  const premiumLabel = plan?.has_premium_access ? 'Premium' : 'Premium’a Geç'
 
   useEffect(() => {
     setIsMenuOpen(false)
@@ -56,7 +59,7 @@ function Header() {
         <NavLink to="/favorilerim">Favorilerim</NavLink>
         <NavLink to="/tercihlerim">Tercihlerim</NavLink>
         <NavLink to="/calisma-plani">Çalışma Planım</NavLink>
-        <NavLink to="/premium">Premium</NavLink>
+        <NavLink className="premium-nav-link" to="/premium"><Crown aria-hidden="true" />{premiumLabel}</NavLink>
         <button type="button" onClick={handleLogout}>
           Çıkış Yap
         </button>
@@ -78,7 +81,7 @@ function Header() {
           <NavLink to="/calisma-plani">Çalışma Planı</NavLink>
           <NavLink to="/pomodoro">Pomodoro Odaları</NavLink>
           <NavLink to="/profil">Profilim</NavLink>
-          {isAuthenticated ? <NavLink to="/premium">Premium</NavLink> : null}
+          {isAuthenticated ? <NavLink className="premium-nav-link" to="/premium"><Crown aria-hidden="true" />{premiumLabel}</NavLink> : null}
         </nav>
 
         <div className="site-header__actions">

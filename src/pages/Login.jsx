@@ -11,8 +11,13 @@ function Login() {
   const [busy, setBusy] = useState('')
   const [localError, setLocalError] = useState('')
   const [message, setMessage] = useState('')
+  const returnTo = typeof location.state?.from === 'string'
+    && location.state.from.startsWith('/')
+    && !location.state.from.startsWith('//')
+    ? location.state.from
+    : '/'
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
-  if (user) return <Navigate replace to="/" />
+  if (user) return <Navigate replace to={returnTo} />
 
   async function run(action, name) {
     setBusy(name); setLocalError(''); setMessage('')

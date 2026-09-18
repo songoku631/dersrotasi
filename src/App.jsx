@@ -11,6 +11,9 @@ import PreferencesPage from './pages/PreferencesPage'
 import FavoritesPage from './pages/FavoritesPage'
 import ProfilePage from './pages/ProfilePage'
 import PremiumPage from './pages/PremiumPage'
+import PremiumCheckoutPage from './pages/PremiumCheckoutPage'
+import PremiumCancelPage from './pages/PremiumCancelPage'
+import PremiumSuccessPage from './pages/PremiumSuccessPage'
 import StudyPlanPage from './pages/StudyPlanPage'
 import YksEstimatePage from './pages/YksEstimatePage'
 import UniversityPreferencePage from './pages/UniversityPreferencePage'
@@ -58,12 +61,17 @@ function App() {
         ))}
         <Route element={<ProtectedRoute />}>
           <Route path="/profil" element={<ProfilePage />} />
-          <Route path="/premium" element={<PremiumPage />} />
           <Route path="/favorilerim" element={<FavoritesPage />} />
           <Route path="/tercihlerim" element={<PreferencesPage />} />
           <Route path="/calisma-plani" element={<StudyPlanPage />} />
           <Route path="/pomodoro" element={<PomodoroPage />} />
           <Route path="/pomodoro/room/:roomId" element={<PomodoroRoomPage />} />
+        </Route>
+        <Route path="/premium" element={<PremiumPage />} />
+        <Route path="/premium/success" element={<PremiumSuccessPage />} />
+        <Route path="/premium/cancel" element={<PremiumCancelPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/premium/checkout" element={<PremiumCheckoutPage />} />
         </Route>
         <Route path="/giris" element={<Login />} />
         <Route path="/login" element={<Login />} />

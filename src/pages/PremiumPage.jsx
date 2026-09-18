@@ -1,12 +1,13 @@
-import { Check, Crown, Minus, Sparkles } from 'lucide-react'
+import { Check, Crown, Minus, ShieldCheck, Sparkles } from 'lucide-react'
 import Button from '../components/Button'
 import Container from '../components/Container'
 import PageHeader from '../components/PageHeader'
+import { PREMIUM_PRICE_LABEL } from '../config/premium'
 import { useAuth } from '../context/useAuth'
 import { useUserPlan } from '../hooks/useUserPlan'
 
 const rows = [
-  { label: 'Günlük AI mesajı', free: '5 / gün', premium: '50 / gün' },
+  { label: 'Günlük AI mesajı', free: '15 / gün', premium: '100 / gün' },
   { label: 'Daha yüksek token bütçesi', free: false, premium: true },
   { label: 'Daha uzun AI mesajları', free: false, premium: true },
   { label: 'Üniversite arama', free: true, premium: true },
@@ -29,16 +30,23 @@ function Availability({ value }) {
 function PremiumPage() {
   const { user } = useAuth()
   const { error, loading, plan, refresh } = useUserPlan(user)
+  const isPremium = Boolean(plan?.has_premium_access)
+  const checkoutTarget = user ? '/premium/checkout' : '/login'
+  const checkoutState = user ? undefined : { from: '/premium/checkout' }
 
   return (
     <>
-      <PageHeader eyebrow="Dersrotası Premium" title="Dersrotası Premium" description="Tercih döneminde daha fazla veri, daha fazla analiz ve daha güçlü Dersrotası AI." />
+      <PageHeader eyebrow="DersRotası Premium" title="DersRotası Premium" description="Daha geniş AI kullanımı ve tercih sürecinde sana eşlik eden gelişmiş özellikler." />
       <section className="section premium-page"><Container>
         {error ? <div className="form-alert" role="alert"><p>{error}</p><Button onClick={refresh} variant="secondary">Tekrar Dene</Button></div> : null}
         <div className="premium-hero-card">
           <span className="premium-card__icon"><Crown aria-hidden="true" /></span>
-          <div><p className="eyebrow">Premium ayrıcalıkları</p><h2>Tercih listen yalnızca sıralanmasın, analiz edilsin.</h2><p>2023–2026 başarı sırası, puan ve kontenjan verileriyle iddialı, hedef ve daha güvenli tercihlerini tek bakışta gör.</p></div>
-          {plan?.has_premium_access ? <strong className="premium-card__current">{plan.is_admin ? 'Admin erişimi aktif' : 'Premium aktif'}</strong> : <Button to="/tercihlerim">Premium Özellikleri Gör</Button>}
+          <div><p className="eyebrow">Premium ayrıcalıkları</p><h2>Tercih listen yalnızca sıralanmasın, analiz edilsin.</h2><p>100 günlük AI mesajı, gelişmiş analiz araçları ve gelecekte eklenecek Premium özellikler tek planda.</p></div>
+          {isPremium ? <strong className="premium-card__current">{plan?.is_admin ? 'Admin erişimi aktif' : 'Premium aktif'}</strong> : <Button state={checkoutState} to={checkoutTarget}>Premium’a Geç</Button>}
+        </div>
+        <div className="premium-plan-summary">
+          <div><span className="premium-card__icon"><Sparkles aria-hidden="true" /></span><h2>Premium Plan</h2><p>Her gün 100 AI mesajı ve gelişmiş tercih araçları.</p></div>
+          <div className="premium-plan-summary__price"><strong>{PREMIUM_PRICE_LABEL}</strong><small>Ödeme altyapısı yakında burada olacak.</small></div>
         </div>
         <div className="premium-comparison-table" aria-busy={loading}>
           <div className="premium-comparison-table__head"><span>Özellik</span><strong><Sparkles aria-hidden="true" /> Free</strong><strong><Crown aria-hidden="true" /> Premium</strong></div>
@@ -47,9 +55,9 @@ function PremiumPage() {
         <div className="premium-feature-grid">
           <article><h3>Tercih Listemi Analiz Et</h3><p>Listenin risk dağılımını, sıralama hatalarını, yıllık başarı sırası oynaklığını ve kontenjan değişimlerini gör.</p></article>
           <article><h3>Program Karşılaştırma</h3><p>İki programın gerçek 2023–2026 verilerini yan yana incele ve kısa AI yorumunu oku.</p></article>
-          <article><h3>Daha geniş AI kullanımı</h3><p>Günde 50 mesaj, daha yüksek token bütçesi ve daha uzun sorularla tercih araştırmanı kesintisiz sürdür.</p></article>
+          <article><h3>Daha geniş AI kullanımı</h3><p>Günde 100 mesaj, daha yüksek token bütçesi ve daha uzun sorularla tercih araştırmanı kesintisiz sürdür.</p></article>
         </div>
-        <p className="premium-page__note">Ödeme sistemi bu MVP’de aktif değildir. Premium plan yerel test planı sistemiyle doğrulanır; satın alma işlemi yapılmaz.</p>
+        <div className="premium-page__trust"><ShieldCheck aria-hidden="true" /><p>Ödeme bilgileri DersRotası’nda tutulmaz. Ödeme sistemi aktif olduğunda güvenli sağlayıcı üzerinden ilerler.</p></div>
       </Container></section>
     </>
   )
