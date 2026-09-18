@@ -60,7 +60,13 @@ final class PomodoroRepository {
             $p->execute($uids);
             foreach ($p->fetchAll(PDO::FETCH_ASSOC) as $profile) $profiles[$profile['firebase_uid']]=$profile;
         }
-        $username=static fn(string $key): string => ($profiles[$key]['username']??'') ?: 'Öğrenci';
+        $username=static function(string $key) use ($profiles): string {
+            $profile=$profiles[$key]??[];
+            $handle=trim((string)($profile['username']??''));
+            if ($handle !== '') return $handle;
+            $name=trim((string)($profile['first_name']??'') . ' ' . (string)($profile['last_name']??''));
+            return $name !== '' ? $name : 'Öğrenci';
+        };
         $members=array_map(fn($m)=>['user_key'=>$m['user_uid'],'username'=>$username($m['user_uid']),'profile_photo_url'=>$profiles[$m['user_uid']]['profile_photo_path']??null,'role'=>$m['role'],'microphone_enabled'=>(bool)$m['microphone_enabled']],$memberRows);
         $queue=array_map(fn($item)=>[...$item,'added_by'=>$username($item['added_by_uid'])],$queue);
         return [...$this->roomRow($r),'is_owner'=>$r['owner_uid']===$uid,'members'=>$members,'member_count'=>count($members),'music_queue'=>$queue];
@@ -76,10 +82,14 @@ final class PomodoroRepository {
     public function messages(string $uid,int $id,int $after=0):array {
         $this->raw($id); $this->assertMember($id,$uid);
         $direction=$after===0?'DESC':'ASC';
-        $s=$this->pdo->prepare("SELECT m.id,m.user_uid,m.message,m.message_type,m.attachment_path,m.attachment_mime,m.attachment_width,m.attachment_height,m.created_at,p.username,p.profile_photo_path FROM pomodoro_room_messages m LEFT JOIN user_profiles p ON p.firebase_uid=m.user_uid WHERE m.room_id=:r AND m.id>:after ORDER BY m.id {$direction} LIMIT 100");
+        $s=$this->pdo->prepare("SELECT m.id,m.user_uid,m.message,m.message_type,m.attachment_path,m.attachment_mime,m.attachment_width,m.attachment_height,m.created_at,p.username,p.first_name,p.last_name,p.profile_photo_path FROM pomodoro_room_messages m LEFT JOIN user_profiles p ON p.firebase_uid=m.user_uid WHERE m.room_id=:r AND m.id>:after ORDER BY m.id {$direction} LIMIT 100");
         $s->execute(['r'=>$id,'after'=>max(0,$after)]);
         $rows=$s->fetchAll(PDO::FETCH_ASSOC); if($after===0)$rows=array_reverse($rows);
-        return array_map(static fn(array $m):array=>['id'=>(int)$m['id'],'user_key'=>$m['user_uid'],'username'=>$m['username']?:'Öğrenci','profile_photo_url'=>$m['profile_photo_path']??null,'message'=>$m['message'],'message_type'=>$m['message_type'],'attachment_path'=>$m['attachment_path'],'attachment_mime'=>$m['attachment_mime'],'attachment_width'=>$m['attachment_width']!==null?(int)$m['attachment_width']:null,'attachment_height'=>$m['attachment_height']!==null?(int)$m['attachment_height']:null,'created_at'=>$m['created_at']],$rows);
+        return array_map(static function(array $m):array {
+            $handle=trim((string)($m['username']??''));
+            $name=trim((string)($m['first_name']??'') . ' ' . (string)($m['last_name']??''));
+            return ['id'=>(int)$m['id'],'user_key'=>$m['user_uid'],'username'=>$handle!==''?$handle:($name!==''?$name:'Öğrenci'),'profile_photo_url'=>$m['profile_photo_path']??null,'message'=>$m['message'],'message_type'=>$m['message_type'],'attachment_path'=>$m['attachment_path'],'attachment_mime'=>$m['attachment_mime'],'attachment_width'=>$m['attachment_width']!==null?(int)$m['attachment_width']:null,'attachment_height'=>$m['attachment_height']!==null?(int)$m['attachment_height']:null,'created_at'=>$m['created_at']];
+        },$rows);
     }
     public function sendMessage(string $uid,int $id,array $payload):array {
         $this->raw($id); $this->assertMember($id,$uid); $this->rate($uid,'message',30);

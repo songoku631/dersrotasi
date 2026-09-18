@@ -49,3 +49,11 @@ test('fotoğraf chat yalnızca izinli MIME ve 5 MB istemci sınırını sunar', 
   assert.match(page, /getRoomImage/)
   assert.match(page, /URL\.createObjectURL/)
 })
+
+test('oda üyeleri ve chat profil kullanıcı adını ve güvenli profil fotoğrafı URL’sini kullanır', () => {
+  assert.match(page, /import \{ profileMediaUrl \} from "\.\.\/api\/client"/)
+  assert.match(page, /const roomProfile = \(person\) => \(\{ username: person\?\.username \|\| "Öğrenci" \}\)/)
+  assert.match(page, /const roomProfilePhotoUrl = \(person\) => profileMediaUrl\(person\?\.profile_photo_url\)/)
+  assert.equal((page.match(/profile=\{roomProfile\(/g) || []).length, 3)
+  assert.equal((page.match(/profilePhotoUrl=\{roomProfilePhotoUrl\(/g) || []).length, 3)
+})

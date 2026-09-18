@@ -22,6 +22,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Button from "../components/Button";
 import Container from "../components/Container";
 import UserAvatar from "../components/user/UserAvatar";
+import { profileMediaUrl } from "../api/client";
 import { useAuth } from "../context/useAuth";
 import {
   addMusic,
@@ -72,6 +73,8 @@ const messageTime = (value) =>
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(`${String(value).replace(" ", "T")}Z`));
+const roomProfile = (person) => ({ username: person?.username || "Öğrenci" });
+const roomProfilePhotoUrl = (person) => profileMediaUrl(person?.profile_photo_url);
 
 function PomodoroRoomPage() {
   const { roomId } = useParams();
@@ -427,8 +430,8 @@ function PomodoroRoomPage() {
                     <div className="voice-member__avatar">
                       <UserAvatar
                         size={62}
-                        profile={{ username: member.username }}
-                        profilePhotoUrl={member.profile_photo_url}
+                        profile={roomProfile(member)}
+                        profilePhotoUrl={roomProfilePhotoUrl(member)}
                       />
                       {!speaking && (
                         <span>
@@ -626,8 +629,8 @@ function PomodoroRoomPage() {
                     <article className="chat-message" key={message.id}>
                       <UserAvatar
                         size={34}
-                        profile={{ username: message.username }}
-                        profilePhotoUrl={message.profile_photo_url}
+                        profile={roomProfile(message)}
+                        profilePhotoUrl={roomProfilePhotoUrl(message)}
                       />
                       <div>
                         <header>
@@ -672,10 +675,10 @@ function PomodoroRoomPage() {
                 <h2>Çevrimiçi — {room.member_count}</h2>
                 {room.members.map((member) => (
                   <div className="side-member" key={member.user_key}>
-                    <UserAvatar
-                      size={38}
-                      profile={{ username: member.username }}
-                      profilePhotoUrl={member.profile_photo_url}
+                      <UserAvatar
+                        size={38}
+                        profile={roomProfile(member)}
+                        profilePhotoUrl={roomProfilePhotoUrl(member)}
                     />
                     <div>
                       <strong>
