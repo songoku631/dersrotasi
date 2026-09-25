@@ -1,16 +1,17 @@
 import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import Logo from '../components/brand/Logo'
 import { useAuth } from '../context/useAuth'
 
 function Register() {
-  const { authLoading, error, loginWithApple, loginWithGoogle, registerWithEmail, user } = useAuth()
+  const { authLoading, emailVerificationRequired, error, loginWithApple, loginWithGoogle, registerWithEmail, user } = useAuth()
+  const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '', passwordAgain: '' })
   const [busy, setBusy] = useState('')
   const [localError, setLocalError] = useState('')
 
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
-  if (user && busy !== 'email') return <Navigate replace to="/" />
+  if (user && busy !== 'email') return <Navigate replace to={emailVerificationRequired ? '/eposta-dogrula' : '/'} />
 
   function update(name, value) { setForm((current) => ({ ...current, [name]: value })) }
   async function social(action, name) {
@@ -23,6 +24,7 @@ function Register() {
     setBusy('email')
     try {
       await registerWithEmail(form.email, form.password)
+      navigate('/eposta-dogrula', { replace: true, state: { verificationSent: true } })
     } catch (requestError) { setLocalError(requestError.message) } finally { setBusy('') }
   }
 

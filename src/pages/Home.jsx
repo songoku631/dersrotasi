@@ -19,25 +19,29 @@ const shortcuts = [
 ]
 
 function Home() {
-  const { authLoading, user } = useAuth()
+  const { authLoading, emailVerificationRequired, isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
   const [question, setQuestion] = useState('')
 
   useEffect(() => {
-    if (!user) { setProfile(null); return undefined }
+    if (!isAuthenticated) { setProfile(null); return undefined }
     const controller = new AbortController()
     getProfile(user, controller.signal)
       .then((response) => setProfile(response.profile || null))
       .catch(() => {})
     return () => controller.abort()
-  }, [user])
+  }, [isAuthenticated, user])
 
   function askAi(message) {
     const cleanMessage = message.trim()
     if (!cleanMessage) return
     const destination = { pathname: '/ai-asistan' }
-    if (!user) {
+    if (!isAuthenticated) {
+      if (emailVerificationRequired) {
+        navigate('/eposta-dogrula')
+        return
+      }
       navigate('/giris', { state: { aiPrompt: cleanMessage, from: destination } })
       return
     }
@@ -58,7 +62,7 @@ function Home() {
           <div className="home-ai__mark" aria-hidden="true"><Bot /></div>
           <p className="eyebrow">Dersrotası AI</p>
           <h1>
-            {!authLoading && user
+            {!authLoading && isAuthenticated
               ? `Merhaba${visibleName ? ` ${visibleName}` : ''} 👋 Bugün neye bakalım?`
               : 'YKS tercihlerini birlikte planlayalım'}
           </h1>

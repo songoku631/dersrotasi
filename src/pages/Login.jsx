@@ -5,7 +5,7 @@ import { useAuth } from '../context/useAuth'
 
 function Login() {
   const location = useLocation()
-  const { authLoading, error, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
+  const { authLoading, emailVerificationRequired, error, loginWithEmail, loginWithGoogle, resetPassword, user } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState('')
@@ -17,7 +17,7 @@ function Login() {
     ? location.state.from
     : '/'
   if (authLoading) return <div className="auth-loading"><p>Oturumun doğrulanıyor...</p></div>
-  if (user) return <Navigate replace to={returnTo} />
+  if (user) return <Navigate replace to={emailVerificationRequired ? '/eposta-dogrula' : returnTo} />
 
   async function run(action, name) {
     setBusy(name); setLocalError(''); setMessage('')

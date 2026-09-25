@@ -15,15 +15,44 @@ test('oda ekranı kompakt kanal, katılımcı, sohbet ve kontrol alanlarını su
 
 test('chat cursor ile polling yapar ve gönderimi 1000 karakterle sınırlar', () => {
   assert.match(api, /messages\?after=/)
+  assert.match(api, /sendRoomMessage = \(user, id, message\).*method: 'POST'.*body: \{ message \}/)
   assert.match(page, /setInterval\(poll, 2500\)/)
   assert.match(page, /maxLength=\{1000\}/)
   assert.match(page, /e\.key === ["']Enter["'] && !e\.shiftKey/)
+  assert.match(page, /e\.currentTarget\.form\.requestSubmit\(\)/)
+  assert.match(page, /\(!message && !imageFile\) \|\| sending \|\| message\.length > 1000/)
+  assert.match(page, /const item = r\.data\.message/)
+  assert.match(page, /setDraft\(""\)/)
+  assert.match(page, /disabled=\{\(!draft\.trim\(\) && !imageFile\) \|\| sending\}/)
 })
 
 test('mobilde sohbet ve üyeler drawer olarak açılır', () => {
   assert.match(css, /@media\(max-width:900px\)/)
   assert.match(css, /\.room-app--drawer \.room-side\{transform:none\}/)
   assert.ok(page.includes('room-drawer-backdrop'))
+})
+
+test('dar mobil ekranlarda ses kontrolleri eşit genişlikte, dokunulabilir ve safe-area içinde kalır', () => {
+  assert.match(css, /@media\(max-width:560px\)/)
+  assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/)
+  assert.match(css, /\.room-voice-controls button\{min-width:0;min-height:44px/)
+  assert.match(css, /safe-area-inset-bottom/)
+  assert.match(css, /\.room-stage\{min-width:0;overflow-x:hidden/)
+  assert.match(css, /\.side-member>div\{min-width:0\}/)
+})
+
+test('ses kontrol grid’i 320–430 px iPhone genişliklerinde 44 px dokunma hedefini korur', () => {
+  const mobileWidths = [320, 375, 390, 430]
+  const sideInset = 8 * 2
+  const innerPadding = 5.6 * 2
+  const gridGaps = 5.6 * 3
+
+  for (const width of mobileWidths) {
+    const controlBarWidth = width - sideInset
+    const controlWidth = (controlBarWidth - innerPadding - gridGaps) / 4
+    assert.ok(controlBarWidth <= width)
+    assert.ok(controlWidth >= 44, `${width}px: ${controlWidth}px`)
+  }
 })
 
 test('WebRTC yeni üyeleri bağlar, erken ICE adaylarını kuyruklar ve autoplay hatasını yakalar', () => {

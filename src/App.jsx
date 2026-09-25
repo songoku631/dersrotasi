@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import EmailVerifiedRoute from './components/auth/EmailVerifiedRoute'
 import MainLayout from './layouts/MainLayout'
 import AiAssistantPage from './pages/AiAssistantPage'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import EmailVerificationPage from './pages/EmailVerificationPage'
 import NotFound from './pages/NotFound'
 import PlaceholderPage from './pages/PlaceholderPage'
 import PreferencesPage from './pages/PreferencesPage'
@@ -39,8 +41,13 @@ function App() {
   return (
     <Routes>
       <Route element={<MainLayout />}>
-        <Route index element={<Home />} />
-        <Route path="/ai-asistan" element={<AiAssistantPage />} />
+        <Route element={<EmailVerifiedRoute />}>
+          <Route index element={<Home />} />
+          <Route path="/ai-asistan" element={<AiAssistantPage />} />
+          <Route path="/premium" element={<PremiumPage />} />
+          <Route path="/premium/success" element={<PremiumSuccessPage />} />
+          <Route path="/premium/cancel" element={<PremiumCancelPage />} />
+        </Route>
         <Route path="/yks-siralama-tahmini" element={<YksEstimatePage />} />
         <Route path="/tyt-net-hesaplama" element={<Navigate replace to="/yks-siralama-tahmini" />} />
         <Route path="/ayt-net-hesaplama" element={<Navigate replace to="/yks-siralama-tahmini" />} />
@@ -67,15 +74,13 @@ function App() {
           <Route path="/pomodoro" element={<PomodoroPage />} />
           <Route path="/pomodoro/room/:roomId" element={<PomodoroRoomPage />} />
         </Route>
-        <Route path="/premium" element={<PremiumPage />} />
-        <Route path="/premium/success" element={<PremiumSuccessPage />} />
-        <Route path="/premium/cancel" element={<PremiumCancelPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/premium/checkout" element={<PremiumCheckoutPage />} />
         </Route>
         <Route path="/giris" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/kayit" element={<Register />} />
+        <Route path="/eposta-dogrula" element={<EmailVerificationPage />} />
         <Route path="/kullanici-adi" element={<Navigate replace to="/" />} />
         <Route path="*" element={<NotFound />} />
       </Route>

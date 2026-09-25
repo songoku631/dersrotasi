@@ -7,6 +7,7 @@ $repository = file_get_contents(dirname(__DIR__) . '/src/Pomodoro/PomodoroReposi
 $chatMigration = file_get_contents(dirname(__DIR__) . '/database/migrations/017_create_pomodoro_room_messages.sql');
 $attachmentMigration = file_get_contents(dirname(__DIR__) . '/database/migrations/018_add_pomodoro_chat_attachments.sql');
 $router = file_get_contents(dirname(__DIR__) . '/public/index.php');
+$env = file_get_contents(dirname(__DIR__) . '/src/Config/Env.php');
 pomodoroCheck(str_contains($migration, 'room_code_hash') && !str_contains($migration, 'room_code VARCHAR'), 'Oda kodu yalnız hash olarak saklanmalı.');
 pomodoroCheck(str_contains($repository, 'password_hash') && str_contains($repository, 'password_verify'), 'Özel oda kodu güvenli doğrulanmalı.');
 pomodoroCheck(str_contains($repository, "['youtube.com','www.youtube.com','youtu.be']") && str_contains($repository, "open.spotify.com"), 'Müzik sağlayıcısı allowlist ile doğrulanmalı.');
@@ -19,4 +20,5 @@ pomodoroCheck(str_contains($router, "'messages' && \$method === 'GET'") && str_c
 pomodoroCheck(!preg_match('/^\s*(DROP|TRUNCATE|DELETE|UPDATE)\b/im',$attachmentMigration) && str_contains($attachmentMigration,'attachment_path'), 'Attachment migration veri silmemeli.');
 pomodoroCheck(str_contains($router, 'imageAttachment($uid') && str_contains($router, 'Cache-Control: private') && str_contains($router, 'X-Content-Type-Options: nosniff'), 'Görsel okuma auth/üyelik ve güvenli header akışını kullanmalı.');
 pomodoroCheck(str_contains($router, 'catch(Throwable $exception){$storage->discard'), 'DB hatasında orphan object temizlenmeli.');
+pomodoroCheck(str_contains($env, "'http://127.0.0.1:5173'") && str_contains($env, "'http://127.0.0.1:5176'"), 'Loopback Vite originleri chat POST preflight için local CORS allowlist içinde olmalı.');
 echo "PomodoroSecurityTest: OK\n";

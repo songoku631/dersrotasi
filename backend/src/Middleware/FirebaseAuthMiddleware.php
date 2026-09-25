@@ -10,8 +10,13 @@ use RuntimeException;
 
 final class FirebaseAuthMiddleware
 {
-    public function __construct(private readonly FirebaseTokenVerifier $verifier)
-    {
+    private readonly EmailVerificationPolicy $emailVerificationPolicy;
+
+    public function __construct(
+        private readonly FirebaseTokenVerifier $verifier,
+        ?EmailVerificationPolicy $emailVerificationPolicy = null
+    ) {
+        $this->emailVerificationPolicy = $emailVerificationPolicy ?? new EmailVerificationPolicy();
     }
 
     public function authenticate(Request $request): array
@@ -28,6 +33,9 @@ final class FirebaseAuthMiddleware
             throw new RuntimeException('Yetkilendirme tokenı geçersiz.', 401);
         }
 
-        return $this->verifier->verify(trim($matches[1]));
+        $identity = $this->verifier->verify(trim($matches[1]));
+        $this->emailVerificationPolicy->assertAllowed($identity);
+
+        return $identity;
     }
 }

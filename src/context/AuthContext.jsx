@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   onIdTokenChanged,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -14,6 +15,10 @@ import {
   googleProvider,
   isFirebaseConfigured,
 } from '../firebase/firebase'
+import {
+  emailVerificationActionSettings,
+  requiresEmailVerification,
+} from '../utils/emailVerification'
 
 const missingConfigMessage =
   'Giriş sistemi henüz yapılandırılmamış. Lütfen site yöneticisine bildir.'
@@ -51,6 +56,9 @@ function getAuthErrorMessage(error) {
   if (code === 'auth/account-exists-with-different-credential') {
     return 'Bu e-posta başka bir giriş yöntemiyle kayıtlı. Önce o yöntemle giriş yap.'
   }
+  if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
+    return 'Doğrulama bağlantısı için uygulama adresi Firebase ayarlarında yetkilendirilmemiş.'
+  }
 
   return 'İşlem sırasında bir hata oluştu. Lütfen tekrar dene.'
 }
@@ -59,6 +67,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [error, setError] = useState('')
+  const [, setVerificationVersion] = useState(0)
 
   useEffect(() => {
     if (!auth) {
@@ -131,7 +140,9 @@ export function AuthProvider({ children }) {
     setError('')
     if (!auth) throw new Error(missingConfigMessage)
     try {
-      return (await createUserWithEmailAndPassword(auth, email.trim(), password)).user
+      const result = await createUserWithEmailAndPassword(auth, email.trim(), password)
+      await sendEmailVerification(result.user, emailVerificationActionSettings())
+      return result.user
     } catch (authError) {
       const message = getAuthErrorMessage(authError)
       setError(message)
@@ -144,6 +155,38 @@ export function AuthProvider({ children }) {
     if (!auth) throw new Error(missingConfigMessage)
     try {
       await sendPasswordResetEmail(auth, email.trim())
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  async function resendEmailVerification() {
+    setError('')
+    const currentUser = auth?.currentUser
+    if (!currentUser) throw new Error('Doğrulama için önce giriş yapmalısın.')
+
+    try {
+      await sendEmailVerification(currentUser, emailVerificationActionSettings())
+    } catch (authError) {
+      const message = getAuthErrorMessage(authError)
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  async function refreshEmailVerification() {
+    setError('')
+    const currentUser = auth?.currentUser
+    if (!currentUser) throw new Error('Doğrulama için önce giriş yapmalısın.')
+
+    try {
+      await currentUser.reload()
+      await currentUser.getIdToken(true)
+      setUser(auth.currentUser)
+      setVerificationVersion((current) => current + 1)
+      return auth.currentUser?.emailVerified === true
     } catch (authError) {
       const message = getAuthErrorMessage(authError)
       setError(message)
@@ -168,22 +211,27 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const emailVerificationRequired = requiresEmailVerification(user)
+
   const value = useMemo(
     () => ({
       authLoading,
       authReady: !authLoading,
       error,
       isFirebaseConfigured,
-      isAuthenticated: Boolean(user),
+      emailVerificationRequired,
+      isAuthenticated: Boolean(user) && !emailVerificationRequired,
       loginWithApple,
       loginWithEmail,
       loginWithGoogle,
       logout,
       registerWithEmail,
+      refreshEmailVerification,
+      resendEmailVerification,
       resetPassword,
       user,
     }),
-    [authLoading, error, user],
+    [authLoading, emailVerificationRequired, error, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -65,9 +65,16 @@ final class FirebaseTokenVerifier
             $this->reject('invalid_bearer_token', 'Firebase token kullanıcı kimliği içermiyor.');
         }
 
+        $firebase = $decoded['firebase'] ?? null;
+        $signInProvider = is_object($firebase)
+            ? ($firebase->sign_in_provider ?? null)
+            : (is_array($firebase) ? ($firebase['sign_in_provider'] ?? null) : null);
+
         return [
             'uid' => $decoded['sub'],
             'email' => $decoded['email'] ?? null,
+            'email_verified' => ($decoded['email_verified'] ?? false) === true,
+            'sign_in_provider' => is_string($signInProvider) ? $signInProvider : null,
             'name' => $decoded['name'] ?? null,
             'picture' => $decoded['picture'] ?? null,
         ];

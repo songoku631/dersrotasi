@@ -39,6 +39,8 @@ final class Env
         if ($this->appEnv() === 'local') {
             $origins[] = 'http://localhost:5176';
             $origins[] = 'http://localhost:5173';
+            $origins[] = 'http://127.0.0.1:5176';
+            $origins[] = 'http://127.0.0.1:5173';
             $configuredOrigin = trim($this->frontendOrigin());
             if ($configuredOrigin !== '') {
                 $origins[] = $configuredOrigin;
